@@ -5,16 +5,31 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Command, InvalidArgumentError } from "commander";
-import { readAuditEvents, type AuditQuery } from "@mcp-toollatch/audit";
+import { exportAuditEvents, readAuditEvents, type AuditExportFormat, type AuditQuery } from "@mcp-toollatch/audit";
+import { applyWrappedConfig, restoreConfigBackup } from "@mcp-toollatch/config";
 import { AppError, exitCodes, projectMetadata, type PolicyDecisionAction } from "@mcp-toollatch/core";
+import { runDoctor, summarizeDoctorReport } from "@mcp-toollatch/doctor";
 import {
   defaultPolicyFileName,
   initPolicyFile,
   loadPolicyFile,
+  type PolicyProfile,
   type ToolLatchPolicy,
 } from "@mcp-toollatch/policy";
 import { createWrappedServerConfig, runStdioProxy, type ConfirmToolCall } from "@mcp-toollatch/proxy";
-import { scanMcpConfigs, summarizeScanReport, type ClientId } from "@mcp-toollatch/scanner";
+import {
+  getClientConfigCandidates,
+  scanMcpConfigs,
+  summarizeScanReport,
+  type ClientId,
+} from "@mcp-toollatch/scanner";
+import {
+  builtInRiskRules,
+  defaultAllowedPathPatterns,
+  defaultConfirmCommandPatterns,
+  defaultDangerousCommandPatterns,
+  defaultSensitivePathPatterns,
+} from "@mcp-toollatch/rules";
 
 export function createProgram(): Command {
   const program = new Command();
@@ -22,7 +37,7 @@ export function createProgram(): Command {
   program
     .name(projectMetadata.commandName)
     .description(projectMetadata.tagline)
-    .version("0.2.0")
+    .version(projectMetadata.version)
     .showHelpAfterError()
     .exitOverride();
 
@@ -32,8 +47,29 @@ export function createProgram(): Command {
     .option("--json", "print structured JSON")
     .option("--output <file>", "write the scan report to a JSON file")
     .option("--client <client>", "limit scan to cursor, claude-desktop, or vscode", parseClient)
-    .action(async (options: { json?: boolean; output?: string; client?: ClientId }) => {
-      const report = await scanMcpConfigs({ clients: options.client === undefined ? undefined : [options.client] });
+    .option("--config <file>", "explicit config path for the selected --client")
+    .option("--deep", "start configured stdio servers and call initialize/tools/list")
+    .option("--timeout <ms>", "deep scan timeout in milliseconds", parsePositiveInteger, 3000)
+    .action(async (options: {
+      json?: boolean;
+      output?: string;
+      client?: ClientId;
+      config?: string;
+      deep?: boolean;
+      timeout: number;
+    }) => {
+      if (options.config !== undefined && options.client === undefined) {
+        throw new AppError("CONFIG_INVALID", "--config requires --client so MCP ToolLatch knows how to parse the file.");
+      }
+      const report = await scanMcpConfigs({
+        clients: options.client === undefined ? undefined : [options.client],
+        configPaths:
+          options.client === undefined || options.config === undefined
+            ? undefined
+            : { [options.client]: [path.resolve(options.config)] },
+        deep: options.deep === true,
+        deepTimeoutMs: options.timeout,
+      });
 
       if (options.output !== undefined) {
         await writeJsonFile(options.output, report);
@@ -51,9 +87,15 @@ export function createProgram(): Command {
     .description("Generate a default local MCP ToolLatch policy file.")
     .option("-o, --output <file>", "policy file path", defaultPolicyFileName)
     .option("-f, --force", "overwrite an existing policy file")
-    .action(async (options: { output: string; force?: boolean }) => {
-      const result = await initPolicyFile({ filePath: options.output, force: options.force === true });
+    .option("--profile <profile>", "policy profile: observe, balanced, or strict", parsePolicyProfile, "balanced")
+    .action(async (options: { output: string; force?: boolean; profile: PolicyProfile }) => {
+      const result = await initPolicyFile({
+        filePath: options.output,
+        force: options.force === true,
+        profile: options.profile,
+      });
       console.log(`Created policy: ${result.filePath}`);
+      console.log(`Profile: ${options.profile}`);
       console.log(`Rules: ${result.policy.rules.length}`);
       console.log("Next: toollatch scan && toollatch wrap --server <name> -- <real command> [args...]");
     });
@@ -71,18 +113,116 @@ export function createProgram(): Command {
     });
 
   program
+    .command("doctor")
+    .description("Diagnose local MCP ToolLatch setup and suggest safe next commands.")
+    .option("--policy <file>", "policy file path", defaultPolicyFileName)
+    .option("--audit-log <file>", "audit JSONL path")
+    .option("--client <client>", "limit diagnostics to cursor, claude-desktop, or vscode", parseClient)
+    .option("--deep", "include scan --deep probing in diagnostics")
+    .option("--json", "print structured JSON")
+    .action(
+      async (options: {
+        policy: string;
+        auditLog?: string;
+        client?: ClientId;
+        deep?: boolean;
+        json?: boolean;
+      }) => {
+        const report = await runDoctor({
+          policyPath: options.policy,
+          auditLogPath: options.auditLog,
+          clients: options.client === undefined ? undefined : [options.client],
+          deep: options.deep === true,
+        });
+
+        if (options.json === true) {
+          console.log(JSON.stringify(report, null, 2));
+        } else {
+          console.log(summarizeDoctorReport(report));
+        }
+      },
+    );
+
+  const configCommand = program
+    .command("config")
+    .description("Inspect MCP client config paths.");
+
+  configCommand
+    .command("paths")
+    .description("Print known MCP client config path candidates.")
+    .option("--client <client>", "limit output to cursor, claude-desktop, or vscode", parseClient)
+    .option("--json", "print structured JSON")
+    .action((options: { client?: ClientId; json?: boolean }) => {
+      const candidates = getClientConfigCandidates({
+        clients: options.client === undefined ? undefined : [options.client],
+      });
+
+      if (options.json === true) {
+        console.log(JSON.stringify(candidates, null, 2));
+        return;
+      }
+
+      for (const candidate of candidates) {
+        console.log(`${candidate.displayName} (${candidate.client}): ${candidate.path}`);
+      }
+    });
+
+  const rulesCommand = program
+    .command("rules")
+    .description("Inspect built-in MCP ToolLatch rule references.");
+
+  rulesCommand
+    .command("list")
+    .description("List built-in risk and policy pattern rules.")
+    .option("--json", "print structured JSON")
+    .action((options: { json?: boolean }) => {
+      const result = {
+        riskRules: builtInRiskRules,
+        sensitivePathPatterns: defaultSensitivePathPatterns,
+        allowedPathPatterns: defaultAllowedPathPatterns,
+        dangerousCommandPatterns: defaultDangerousCommandPatterns,
+        confirmCommandPatterns: defaultConfirmCommandPatterns,
+      };
+
+      if (options.json === true) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log("Risk rules:");
+      for (const rule of builtInRiskRules) {
+        console.log(`- ${rule.id} ${rule.severity.toUpperCase()} ${rule.title}`);
+      }
+      console.log("\nSensitive path patterns:");
+      for (const pattern of defaultSensitivePathPatterns) {
+        console.log(`- ${pattern}`);
+      }
+      console.log("\nDangerous command patterns:");
+      for (const pattern of defaultDangerousCommandPatterns) {
+        console.log(`- ${pattern}`);
+      }
+    });
+
+  program
     .command("wrap")
     .description("Run a stdio MCP proxy around a real MCP server.")
     .option("--server <name>", "logical MCP server name for audit logs")
     .option("--policy <file>", "policy file path", defaultPolicyFileName)
     .option("--audit-log <file>", "audit JSONL path; defaults to policy audit.path")
     .option("--print-config", "print a wrapped MCP server config snippet and exit")
+    .option("--confirm-timeout <ms>", "interactive confirmation timeout in milliseconds", parsePositiveInteger, 30_000)
     .allowUnknownOption(true)
     .argument("<command...>", "real MCP server command after --")
     .action(
       async (
         commandParts: string[],
-        options: { server?: string; policy: string; auditLog?: string; printConfig?: boolean },
+        options: {
+          server?: string;
+          policy: string;
+          auditLog?: string;
+          printConfig?: boolean;
+          confirmTimeout: number;
+        },
       ) => {
         const [command, ...args] = commandParts;
         if (command === undefined) {
@@ -120,13 +260,76 @@ export function createProgram(): Command {
           auditLogPath,
           cwd: process.cwd(),
           isInteractive: process.stdin.isTTY,
-          confirm: createConfirmPrompt(),
+          confirm: createConfirmPrompt(options.confirmTimeout),
         });
         process.exitCode = exitCode;
       },
     );
 
   program
+    .command("apply")
+    .description("Safely wrap a configured MCP server in a client config. Dry-run by default.")
+    .requiredOption("--client <client>", "cursor, claude-desktop, or vscode", parseClient)
+    .requiredOption("--server <name>", "server name in the MCP client config")
+    .option("--config <file>", "explicit client config path")
+    .option("--policy <file>", "policy path to place in wrapped command", defaultPolicyFileName)
+    .option("--write", "write the updated config after creating a backup")
+    .option("--json", "print structured JSON")
+    .action(
+      async (options: {
+        client: ClientId;
+        server: string;
+        config?: string;
+        policy: string;
+        write?: boolean;
+        json?: boolean;
+      }) => {
+        const result = await applyWrappedConfig({
+          client: options.client,
+          serverName: options.server,
+          configPath: options.config,
+          policyPath: options.policy,
+          write: options.write === true,
+        });
+
+        if (options.json === true) {
+          console.log(JSON.stringify(formatApplyConfigResult(result), null, 2));
+          return;
+        }
+
+        console.log(result.message);
+        console.log(`Config: ${result.configPath}`);
+        if (result.backupPath !== undefined) {
+          console.log(`Backup: ${result.backupPath}`);
+        }
+        if (options.write !== true && result.changed) {
+          console.log("No files were changed. Re-run with --write to apply after reviewing the JSON diff.");
+        }
+      },
+    );
+
+  program
+    .command("restore")
+    .description("Restore a client config from an MCP ToolLatch backup.")
+    .requiredOption("--config <file>", "client config path to restore")
+    .requiredOption("--backup <file>", "backup file to restore from")
+    .option("--json", "print structured JSON")
+    .action(async (options: { config: string; backup: string; json?: boolean }) => {
+      const result = await restoreConfigBackup({
+        configPath: path.resolve(options.config),
+        backupPath: path.resolve(options.backup),
+      });
+
+      if (options.json === true) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log(`Restored ${result.configPath} from ${result.backupPath}`);
+      console.log(`Previous current config was backed up to ${result.preRestoreBackupPath}`);
+    });
+
+  const logsCommand = program
     .command("logs")
     .description("Show recent MCP ToolLatch audit events.")
     .option("--policy <file>", "policy file path", defaultPolicyFileName)
@@ -163,6 +366,68 @@ export function createProgram(): Command {
           console.log(JSON.stringify(events, null, 2));
         } else {
           console.log(formatAuditEvents(events, logFile));
+        }
+      },
+    );
+
+  logsCommand
+    .command("export")
+    .description("Export audit events as redacted JSON or CSV.")
+    .option("--policy <file>", "policy file path", defaultPolicyFileName)
+    .option("--log-file <file>", "audit JSONL path; defaults to policy audit.path")
+    .option("--format <format>", "json or csv", parseAuditExportFormat, "json")
+    .requiredOption("--out <file>", "output file path")
+    .option("--limit <number>", "maximum events to export", parsePositiveInteger, 50)
+    .option("--server <name>", "filter by server")
+    .option("--tool <name>", "filter by tool")
+    .option("--decision <decision>", "filter by allow, block, or confirm", parseDecision)
+    .option("--since <iso-date>", "filter events after an ISO timestamp")
+    .option("--json", "print export result as JSON")
+    .action(
+      async (options: {
+        policy?: string;
+        logFile?: string;
+        format: AuditExportFormat;
+        out: string;
+        limit: number;
+        server?: string;
+        tool?: string;
+        decision?: PolicyDecisionAction;
+        since?: string;
+        json?: boolean;
+      }) => {
+        const parentOptions = logsCommand.opts<{
+          policy?: string;
+          logFile?: string;
+          limit?: number;
+          server?: string;
+          tool?: string;
+          decision?: PolicyDecisionAction;
+          since?: string;
+          json?: boolean;
+        }>();
+        const policy = await loadPolicyOrDefault(options.policy ?? parentOptions.policy ?? defaultPolicyFileName);
+        const logFile = path.resolve(options.logFile ?? parentOptions.logFile ?? policy.audit.path);
+        const query: AuditQuery = {
+          limit: options.limit ?? parentOptions.limit,
+          server: options.server ?? parentOptions.server,
+          tool: options.tool ?? parentOptions.tool,
+          decision: options.decision ?? parentOptions.decision,
+          since: options.since === undefined && parentOptions.since === undefined
+            ? undefined
+            : new Date(options.since ?? String(parentOptions.since)),
+        };
+        const result = await exportAuditEvents({
+          logFilePath: logFile,
+          outFilePath: path.resolve(options.out),
+          format: options.format,
+          query,
+        });
+
+        if (options.json === true || parentOptions.json === true) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Exported ${result.count} audit events to ${result.outFilePath}`);
         }
       },
     );
@@ -208,11 +473,25 @@ function parseClient(value: string): ClientId {
   throw new InvalidArgumentError("Expected one of: cursor, claude-desktop, vscode");
 }
 
+function parsePolicyProfile(value: string): PolicyProfile {
+  if (value === "observe" || value === "balanced" || value === "strict") {
+    return value;
+  }
+  throw new InvalidArgumentError("Expected one of: observe, balanced, strict");
+}
+
 function parseDecision(value: string): PolicyDecisionAction {
   if (value === "allow" || value === "block" || value === "confirm") {
     return value;
   }
   throw new InvalidArgumentError("Expected one of: allow, block, confirm");
+}
+
+function parseAuditExportFormat(value: string): AuditExportFormat {
+  if (value === "json" || value === "csv") {
+    return value;
+  }
+  throw new InvalidArgumentError("Expected one of: json, csv");
 }
 
 function parsePositiveInteger(value: string): number {
@@ -223,12 +502,19 @@ function parsePositiveInteger(value: string): number {
   return parsed;
 }
 
-function createConfirmPrompt(): ConfirmToolCall | undefined {
+function createConfirmPrompt(timeoutMs: number): ConfirmToolCall | undefined {
   if (!process.stdin.isTTY) {
     return undefined;
   }
 
+  const allowedForSession = new Set<string>();
+
   return async (request, decision) => {
+    const sessionKey = `${request.serverName}:${request.toolName}`;
+    if (allowedForSession.has(sessionKey)) {
+      return true;
+    }
+
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stderr,
@@ -240,12 +526,41 @@ function createConfirmPrompt(): ConfirmToolCall | undefined {
       if (decision.suggestedFix !== undefined) {
         process.stderr.write(`Suggested fix: ${decision.suggestedFix}\n`);
       }
-      const answer = await rl.question("Allow this call once? [y/N] ");
-      return /^y(?:es)?$/i.test(answer.trim());
+      const answer = await questionWithTimeout(
+        rl,
+        `Choose: [o]nce, [s]ession, [b]lock (default block after ${timeoutMs}ms): `,
+        timeoutMs,
+      );
+      const normalized = answer.trim().toLowerCase();
+      if (normalized === "s" || normalized === "session") {
+        allowedForSession.add(sessionKey);
+        return true;
+      }
+      return normalized === "o" || normalized === "once" || normalized === "y" || normalized === "yes";
     } finally {
       rl.close();
     }
   };
+}
+
+async function questionWithTimeout(
+  rl: readline.Interface,
+  prompt: string,
+  timeoutMs: number,
+): Promise<string> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      rl.question(prompt),
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve(""), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 async function loadPolicyOrDefault(filePath: string): Promise<ToolLatchPolicy> {
@@ -283,6 +598,26 @@ function formatAuditEvents(events: Awaited<ReturnType<typeof readAuditEvents>>, 
       return `${event.timestamp} ${event.decision.toUpperCase()} ${event.risk.toUpperCase()} ${event.server}/${event.tool}${rule}\n  ${event.reason}\n  args: ${event.argumentsSummary}`;
     })
     .join("\n");
+}
+
+function formatApplyConfigResult(result: Awaited<ReturnType<typeof applyWrappedConfig>>): {
+  client: ClientId;
+  serverName: string;
+  configPath: string;
+  changed: boolean;
+  alreadyWrapped: boolean;
+  backupPath?: string;
+  message: string;
+} {
+  return {
+    client: result.client,
+    serverName: result.serverName,
+    configPath: result.configPath,
+    changed: result.changed,
+    alreadyWrapped: result.alreadyWrapped,
+    backupPath: result.backupPath,
+    message: result.message,
+  };
 }
 
 async function writeJsonFile(filePath: string, value: unknown): Promise<void> {

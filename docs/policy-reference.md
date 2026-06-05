@@ -1,6 +1,18 @@
 # Policy Reference
 
-The policy format is intentionally small for the first version. It is YAML and validated with Zod before the proxy starts.
+The policy format is intentionally small. It is YAML and validated with Zod before the proxy starts.
+
+Generate profiles with:
+
+```bash
+toollatch init --profile observe
+toollatch init --profile balanced
+toollatch init --profile strict
+```
+
+- `observe` logs what would have matched but allows the call.
+- `balanced` blocks sensitive paths and dangerous commands, and confirms high-impact or unknown calls.
+- `strict` blocks stricter unknown/high-impact calls by default.
 
 ## Example
 
@@ -42,6 +54,9 @@ rules:
       - "sudo"
       - "curl * | sh"
       - "wget * | sh"
+      - "iwr * | iex"
+      - "irm * | iex"
+      - "powershell * iex"
       - "chmod 777"
       - "dd if="
     action: block
@@ -65,3 +80,13 @@ audit:
 - `rules[].deny_commands` - shell command patterns blocked or confirmed.
 - `rules[].require_confirm` - require local confirmation for a matching rule.
 - `audit` - local audit log settings.
+
+Audit events include `version: 1` and are exported with redaction by:
+
+```bash
+toollatch logs export --format json --out audit-export.json
+toollatch logs export --format csv --out audit-export.csv
+toollatch rules list --json
+```
+
+`toollatch rules list` prints the built-in risk rules plus sensitive path, allowed path, dangerous command, and confirmation command patterns used by generated policy defaults.

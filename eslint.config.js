@@ -7,6 +7,7 @@ export default [
     ignores: [
       "coverage/**",
       "dist/**",
+      "**/dist/**",
       "node_modules/**",
       "pnpm-lock.yaml",
     ],

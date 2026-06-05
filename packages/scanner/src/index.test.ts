@@ -74,4 +74,43 @@ describe("scanner config parsing", () => {
     expect(report.servers[0]?.name).toBe("fs");
     expect(summarizeScanReport(report)).toContain("Claude Desktop");
   });
+
+  it("accepts UTF-8 BOM config files common on Windows", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "toollatch-scan-bom-"));
+    const config = path.join(tmp, "cursor.json");
+    await fs.writeFile(config, `\uFEFF${JSON.stringify({ mcpServers: { fs: { command: "node" } } })}`, "utf8");
+
+    const report = await scanMcpConfigs({ clients: ["cursor"], configPaths: { cursor: [config] } });
+
+    expect(report.clients[0]?.status).toBe("found");
+    expect(report.servers[0]?.name).toBe("fs");
+  });
+
+  it("deep scans a stdio MCP fixture and reports discovered tools", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "toollatch-scan-deep-"));
+    const config = path.join(tmp, "claude.json");
+    const fakeServer = path.resolve("tests", "fixtures", "fake-mcp-server.js");
+    await fs.writeFile(
+      config,
+      JSON.stringify({
+        mcpServers: {
+          fake: { command: process.execPath, args: [fakeServer], cwd: tmp },
+        },
+      }),
+      "utf8",
+    );
+
+    const report = await scanMcpConfigs({
+      clients: ["claude-desktop"],
+      configPaths: { "claude-desktop": [config] },
+      deep: true,
+      deepTimeoutMs: 5_000,
+    });
+
+    expect(report.servers[0]?.deepScan?.status).toBe("ok");
+    expect(report.servers[0]?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["read_file", "write_file", "shell_run"]),
+    );
+    expect(JSON.stringify(report)).not.toContain("fake-mcp-server ready");
+  });
 });

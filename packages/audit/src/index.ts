@@ -9,6 +9,7 @@ import {
 } from "@mcp-toollatch/core";
 
 export interface AuditEvent {
+  version: 1;
   id: string;
   timestamp: string;
   server: string;
@@ -42,6 +43,8 @@ export interface AuditQuery {
   since?: Date;
 }
 
+export type AuditExportFormat = "json" | "csv";
+
 export const defaultAuditModule = {
   name: "audit",
   purpose: "Record local audit events for MCP tool-call decisions.",
@@ -51,6 +54,7 @@ export function createAuditEvent(input: CreateAuditEventInput): AuditEvent {
   const now = Date.now();
   const redactedArguments = redactObject(input.request.arguments);
   return {
+    version: 1,
     id: `${now}-${Math.random().toString(36).slice(2, 10)}`,
     timestamp: new Date(now).toISOString(),
     server: input.request.serverName,
@@ -96,7 +100,7 @@ export async function readAuditEvents(filePath: string, query: AuditQuery = {}):
     .filter((line) => line.trim().length > 0)
     .flatMap((line) => {
       try {
-        return [parseAuditEvent(JSON.parse(line))];
+        return [parseAuditEvent(JSON.parse(stripBom(line)))];
       } catch {
         return [];
       }
@@ -127,6 +131,7 @@ export function parseAuditEvent(value: unknown): AuditEvent {
   }
 
   return {
+    version: 1,
     id: event.id,
     timestamp: event.timestamp,
     server: event.server,
@@ -139,6 +144,26 @@ export function parseAuditEvent(value: unknown): AuditEvent {
     reason: event.reason,
     matchedRuleId: event.matchedRuleId,
     durationMs: event.durationMs,
+  };
+}
+
+export async function exportAuditEvents(input: {
+  logFilePath: string;
+  outFilePath: string;
+  format: AuditExportFormat;
+  query?: AuditQuery;
+}): Promise<{ outFilePath: string; count: number; format: AuditExportFormat }> {
+  const events = await readAuditEvents(input.logFilePath, input.query);
+  const content =
+    input.format === "json"
+      ? `${JSON.stringify(events, null, 2)}\n`
+      : toCsv(events);
+  await fs.mkdir(path.dirname(input.outFilePath), { recursive: true });
+  await fs.writeFile(input.outFilePath, content, "utf8");
+  return {
+    outFilePath: input.outFilePath,
+    count: events.length,
+    format: input.format,
   };
 }
 
@@ -160,6 +185,42 @@ function matchesQuery(event: AuditEvent, query: AuditQuery): boolean {
   }
 
   return true;
+}
+
+function toCsv(events: AuditEvent[]): string {
+  const header = [
+    "timestamp",
+    "server",
+    "tool",
+    "decision",
+    "risk",
+    "matchedRuleId",
+    "reason",
+    "argumentsSummary",
+  ];
+  const rows = events.map((event) =>
+    [
+      event.timestamp,
+      event.server,
+      event.tool,
+      event.decision,
+      event.risk,
+      event.matchedRuleId ?? "",
+      event.reason,
+      event.argumentsSummary,
+    ]
+      .map(csvCell)
+      .join(","),
+  );
+  return `${header.join(",")}\n${rows.join("\n")}${rows.length === 0 ? "" : "\n"}`;
+}
+
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function stripBom(value: string): string {
+  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
 }
 
 function isDecision(value: unknown): value is PolicyDecisionAction {

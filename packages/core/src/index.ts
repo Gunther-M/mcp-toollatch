@@ -4,8 +4,9 @@ export const projectMetadata = {
   name: "MCP ToolLatch",
   packageName: "mcp-toollatch",
   commandName: "toollatch",
+  version: "0.3.0-beta.1",
   tagline: "Local policy, approval, and audit for MCP tool calls.",
-  status: "pre-alpha",
+  status: "beta",
 } as const;
 
 export type ProjectMetadata = typeof projectMetadata;

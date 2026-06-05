@@ -2,15 +2,13 @@
 
 Local policy, approval, and audit for MCP tool calls.
 
-MCP ToolLatch is a local MCP security gateway for AI Agent tool calls. Phase 1 provides a CLI-first MVP for scanning MCP client configuration, generating a default local policy, wrapping stdio MCP servers, intercepting risky `tools/call` requests, and reading JSONL audit logs.
-
-中文简介：MCP ToolLatch 是一个本地运行的 MCP 与 AI Agent 工具调用安全网关。一期重点是扫描、策略、stdio 代理、拦截和审计，不做 Web Dashboard。
+MCP ToolLatch is a local MCP security gateway for AI Agent tool calls. It scans MCP client configuration, generates local policies, wraps stdio MCP servers, intercepts risky `tools/call` requests, asks for confirmation when needed, and writes redacted JSONL audit logs.
 
 ## Status
 
-Pre-alpha / active development / not production-ready.
+Beta-oriented local tool / active development / not production-ready.
 
-MCP ToolLatch is useful for local experimentation and early safety visibility, but it is not a complete sandbox.
+MCP ToolLatch is not a complete sandbox. It does not provide kernel isolation, complete prompt-injection defense, enterprise compliance, or guaranteed containment of malicious MCP servers. It is a tool-call layer policy, confirmation, and audit gateway.
 
 ## Install And Verify
 
@@ -28,6 +26,19 @@ Run the built CLI locally:
 node packages/cli/dist/index.js --help
 ```
 
+## Quick Start
+
+```bash
+toollatch scan --json
+toollatch scan --deep --client cursor --config ./mcp.json --json
+toollatch init --profile balanced --force
+toollatch doctor
+toollatch config paths
+toollatch rules list
+toollatch wrap --server filesystem -- node ./server.js
+toollatch logs --json
+```
+
 ## Commands
 
 ### Scan
@@ -40,19 +51,73 @@ toollatch scan --json
 toollatch scan --client cursor --output report.json
 ```
 
-The scanner reports client config status, server names, commands, args, redacted env summaries, capabilities, risk levels, and warnings.
+Deep scan starts configured stdio MCP servers and calls only `initialize` and `tools/list`:
+
+```bash
+toollatch scan --deep --client cursor --config ./mcp.json --timeout 5000 --json
+```
+
+Deep scan has a timeout and fails per server without breaking the whole scan. It does not call `tools/call`.
 
 ### Init
 
 Generate a default local policy:
 
 ```bash
-toollatch init
-toollatch init --force
+toollatch init --profile observe
+toollatch init --profile balanced --force
+toollatch init --profile strict --force
 toollatch policy check toollatch.policy.yaml
 ```
 
-The default policy blocks sensitive paths such as `.env`, `.env.*`, `~/.ssh`, `~/.aws`, `~/.config`, `*.pem`, `*.key`, `*.crt`, `*.p12`, and `*.pfx`. It also blocks dangerous shell patterns such as `rm -rf`, `sudo`, `curl * | sh`, `wget * | sh`, `chmod 777`, and `dd if=`.
+Profiles:
+
+- `observe`: allow calls while logging what would have matched.
+- `balanced`: block sensitive paths and dangerous commands, confirm high-impact/unknown calls.
+- `strict`: block sensitive paths, dangerous commands, and stricter unknown/high-impact calls.
+
+### Doctor
+
+Diagnose the local setup and get repair suggestions:
+
+```bash
+toollatch doctor
+toollatch doctor --json
+toollatch doctor --deep --client cursor
+```
+
+Doctor reports discovered clients, discovered servers, high-risk configuration, policy status, audit log status, and suggested next commands.
+
+### Config And Rules
+
+Inspect known client config path candidates and built-in rule references:
+
+```bash
+toollatch config paths
+toollatch config paths --client cursor --json
+toollatch rules list
+toollatch rules list --json
+```
+
+### Apply And Restore
+
+Prepare a wrapped MCP client configuration. Dry-run is the default and does not write files:
+
+```bash
+toollatch apply --client cursor --server filesystem --config ./mcp.json --json
+```
+
+Write only with an explicit flag. ToolLatch writes a backup before changing the config:
+
+```bash
+toollatch apply --client cursor --server filesystem --config ./mcp.json --write
+```
+
+Restore from a backup:
+
+```bash
+toollatch restore --config ./mcp.json --backup ./mcp.json.backup-2026-06-05T00-00-00-000Z.bak
+```
 
 ### Wrap
 
@@ -60,10 +125,11 @@ Wrap a stdio MCP server:
 
 ```bash
 toollatch wrap --server filesystem -- node ./server.js
-toollatch wrap --server filesystem --print-config -- node ./server.js
+toollatch wrap --server filesystem --confirm-timeout 30000 -- node ./server.js
+toollatch wrap --print-config -- node ./server.js
 ```
 
-The proxy transparently forwards JSON-RPC messages and intercepts `tools/call` requests before they reach the real server. Blocking responses include risk, reason, matched rule, and suggested fix. Confirmation decisions are denied by default in non-interactive sessions.
+The proxy forwards JSON-RPC messages and intercepts `tools/call` requests before they reach the real server. Confirmation supports allow once, allow session, and block in interactive terminals. Non-interactive sessions deny confirmation by default.
 
 ### Logs
 
@@ -76,23 +142,26 @@ toollatch logs --decision block
 toollatch logs --json
 ```
 
-Audit logs are JSONL. Tool arguments are summarized and sensitive keys such as token, secret, password, api_key, authorization, and cookie are redacted.
+Export redacted logs:
+
+```bash
+toollatch logs export --format json --out audit-export.json
+toollatch logs export --format csv --decision block --out audit-export.csv
+```
+
+Audit logs are JSONL. Tool arguments are summarized and sensitive keys such as token, secret, password, api_key, authorization, cookie, and obvious secret assignments are redacted.
 
 ## Packages
 
 - `@mcp-toollatch/cli` - command entrypoints and user-facing output
-- `@mcp-toollatch/core` - shared types, errors, risk levels, and redaction utilities
-- `@mcp-toollatch/scanner` - MCP config discovery and static risk reporting
-- `@mcp-toollatch/policy` - YAML policy loading, validation, extraction, and decisions
-- `@mcp-toollatch/proxy` - stdio JSON-RPC forwarding and `tools/call` interception
-- `@mcp-toollatch/audit` - JSONL audit write/read/query
-- `@mcp-toollatch/rules` - built-in sensitive path, command, and classifier rules
-
-## Security Notice
-
-MCP ToolLatch phase 1 is not a full sandbox. It does not provide kernel-level isolation, complete prompt-injection defense, enterprise compliance, or guaranteed containment of malicious MCP servers. It is a local policy and visibility layer that can block common sensitive file access and dangerous command patterns.
-
-安全声明：本项目第一阶段不是完整沙箱，不承诺防御所有 prompt injection 或数据泄露。
+- `@mcp-toollatch/core` - shared types, errors, risk levels, paths, and redaction utilities
+- `@mcp-toollatch/scanner` - MCP config discovery, static scan, and safe tools/list probing
+- `@mcp-toollatch/policy` - YAML policy loading, profiles, validation, extraction, and decisions
+- `@mcp-toollatch/proxy` - stdio JSON-RPC forwarding, confirmation, and `tools/call` interception
+- `@mcp-toollatch/audit` - JSONL audit write/read/query/export
+- `@mcp-toollatch/rules` - built-in sensitive path, command, tool metadata, and classifier rules
+- `@mcp-toollatch/config` - safe client config dry-run/apply/restore helpers
+- `@mcp-toollatch/doctor` - local diagnostics and repair suggestions
 
 ## Roadmap
 

@@ -1,9 +1,9 @@
 {
-  "name": "@mcp-toollatch/policy",
+  "name": "@mcp-toollatch/doctor",
   "version": "0.3.0-beta.1",
   "type": "module",
   "license": "Apache-2.0",
-  "description": "Policy schema and future evaluation logic for MCP ToolLatch.",
+  "description": "Local diagnostics for MCP ToolLatch.",
   "types": "./src/index.ts",
   "files": [
     "dist",
@@ -22,13 +22,12 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@mcp-toollatch/audit": "workspace:*",
     "@mcp-toollatch/core": "workspace:*",
-    "@mcp-toollatch/rules": "workspace:*",
-    "micromatch": "^4.0.8",
-    "yaml": "^2.7.0",
-    "zod": "^3.25.0"
+    "@mcp-toollatch/policy": "workspace:*",
+    "@mcp-toollatch/scanner": "workspace:*"
   },
   "devDependencies": {
-    "@types/micromatch": "^4.0.9"
+    "@types/node": "^22.15.29"
   }
 }

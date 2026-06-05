@@ -12,6 +12,7 @@ describe("built-in risk rules", () => {
     expect(defaultDangerousCommandPatterns).toContain("rm -rf");
     expect(defaultDangerousCommandPatterns).toContain("sudo");
     expect(defaultDangerousCommandPatterns).toContain("curl * | sh");
+    expect(defaultDangerousCommandPatterns).toContain("iwr * | iex");
   });
 
   it("classifies shell servers as critical", () => {

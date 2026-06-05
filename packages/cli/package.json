@@ -1,6 +1,6 @@
 {
   "name": "@mcp-toollatch/cli",
-  "version": "0.0.0",
+  "version": "0.3.0-beta.1",
   "type": "module",
   "license": "Apache-2.0",
   "description": "CLI for MCP ToolLatch.",
@@ -9,7 +9,8 @@
     "toollatch": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "src/index.ts"
   ],
   "exports": {
     ".": {
@@ -19,17 +20,26 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup --config tsup.config.ts",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "commander": "^12.1.0",
+    "jsonc-parser": "^3.3.1",
+    "micromatch": "^4.0.8",
+    "yaml": "^2.7.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
     "@mcp-toollatch/audit": "workspace:*",
+    "@mcp-toollatch/config": "workspace:*",
     "@mcp-toollatch/core": "workspace:*",
+    "@mcp-toollatch/doctor": "workspace:*",
     "@mcp-toollatch/policy": "workspace:*",
     "@mcp-toollatch/proxy": "workspace:*",
-    "@mcp-toollatch/scanner": "workspace:*",
-    "commander": "^12.1.0"
+    "@mcp-toollatch/rules": "workspace:*",
+    "@mcp-toollatch/scanner": "workspace:*"
   }
 }

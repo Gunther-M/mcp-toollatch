@@ -71,6 +71,7 @@ export const policySchema = z
 
 export type PolicyAction = z.infer<typeof policyActionSchema>;
 export type PolicyMode = z.infer<typeof policyModeSchema>;
+export type PolicyProfile = "observe" | "balanced" | "strict";
 export type PolicyRule = z.infer<typeof policyRuleSchema>;
 export type ToolLatchPolicy = z.infer<typeof policySchema>;
 
@@ -92,6 +93,7 @@ export interface InitPolicyOptions {
   cwd?: string;
   filePath?: string;
   force?: boolean;
+  profile?: PolicyProfile;
 }
 
 export interface InitPolicyResult {
@@ -101,11 +103,20 @@ export interface InitPolicyResult {
 }
 
 export function createDefaultPolicy(): ToolLatchPolicy {
+  return createPolicyForProfile("balanced");
+}
+
+export function createPolicyForProfile(profile: PolicyProfile): ToolLatchPolicy {
+  const mode: PolicyMode = profile === "observe" ? "observe" : "enforce";
+  const unknownTool: PolicyAction = profile === "strict" ? "block" : "confirm";
+  const filesystemOutsideAction: PolicyAction = profile === "strict" ? "block" : "allow";
+  const shellConfirmAction: PolicyAction = profile === "strict" ? "block" : "confirm";
+
   return policySchema.parse({
     version: 1,
-    mode: "enforce",
+    mode,
     defaults: {
-      unknown_tool: "confirm",
+      unknown_tool: unknownTool,
       log_all_calls: true,
       non_interactive_confirm: "deny",
     },
@@ -129,7 +140,7 @@ export function createDefaultPolicy(): ToolLatchPolicy {
         severity: "high",
         match: { category: "filesystem" },
         allow_paths: [...defaultAllowedPathPatterns],
-        action: "allow",
+        action: filesystemOutsideAction,
       },
       {
         id: "RULE-004",
@@ -146,8 +157,8 @@ export function createDefaultPolicy(): ToolLatchPolicy {
         severity: "high",
         match: { category: "shell" },
         deny_commands: [...defaultConfirmCommandPatterns],
-        require_confirm: true,
-        action: "confirm",
+        require_confirm: profile !== "strict",
+        action: shellConfirmAction,
         suggested_fix: "Confirm only after checking the target environment and command arguments.",
       },
       {
@@ -155,8 +166,8 @@ export function createDefaultPolicy(): ToolLatchPolicy {
         description: "Unknown tools require confirmation by default.",
         severity: "medium",
         match: { category: "unknown" },
-        require_confirm: true,
-        action: "confirm",
+        require_confirm: profile !== "strict",
+        action: unknownTool,
         suggested_fix: "Add an explicit policy rule after reviewing this tool.",
       },
     ],
@@ -170,6 +181,7 @@ export function createDefaultPolicyYaml(): string {
 export async function initPolicyFile(options: InitPolicyOptions = {}): Promise<InitPolicyResult> {
   const cwd = options.cwd ?? process.cwd();
   const filePath = path.resolve(cwd, options.filePath ?? defaultPolicyFileName);
+  const policy = createPolicyForProfile(options.profile ?? "balanced");
 
   if (!options.force && (await fileExists(filePath))) {
     throw new AppError(
@@ -179,12 +191,12 @@ export async function initPolicyFile(options: InitPolicyOptions = {}): Promise<I
   }
 
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, createDefaultPolicyYaml(), "utf8");
+  await fs.writeFile(filePath, YAML.stringify(policy), "utf8");
 
   return {
     filePath,
     created: true,
-    policy: createDefaultPolicy(),
+    policy,
   };
 }
 
@@ -229,33 +241,33 @@ export function evaluateToolCall(
 
   const pathDecision = evaluatePathRules(policy, extracted.paths, category, cwd, homeDir);
   if (pathDecision.action !== "allow") {
-    return pathDecision;
+    return observeDecision(policy, pathDecision);
   }
 
   const commandDecision = evaluateCommandRules(policy, extracted.commands, category);
   if (commandDecision.action !== "allow") {
     if (commandDecision.action === "confirm" && context.isInteractive === false) {
-      return {
+      return observeDecision(policy, {
         ...commandDecision,
         action: policy.defaults.non_interactive_confirm === "allow" ? "allow" : "block",
         reason: `${commandDecision.reason} Non-interactive sessions deny confirmation by default.`,
         matchedRuleId: commandDecision.matchedRuleId ?? "RULE-013",
-      };
+      });
     }
-    return commandDecision;
+    return observeDecision(policy, commandDecision);
   }
 
   const genericDecision = evaluateGenericRules(policy, category, extracted);
   if (genericDecision.action === "confirm" && context.isInteractive === false) {
-    return {
+    return observeDecision(policy, {
       ...genericDecision,
       action: policy.defaults.non_interactive_confirm === "allow" ? "allow" : "block",
       reason: `${genericDecision.reason} Non-interactive sessions deny confirmation by default.`,
       matchedRuleId: genericDecision.matchedRuleId ?? "RULE-013",
-    };
+    });
   }
 
-  return genericDecision;
+  return observeDecision(policy, genericDecision);
 }
 
 export function extractToolArguments(
@@ -370,8 +382,9 @@ function evaluatePathRules(
     });
 
     if (outside !== undefined) {
+      const allowRule = applicableRules(policy, category).find((rule) => rule.allow_paths.length > 0);
       return makeDecision(
-        "confirm",
+        allowRule?.action === "block" ? "block" : "confirm",
         "high",
         {
           id: "RULE-003",
@@ -479,6 +492,18 @@ function allowDecision(): PolicyDecision {
     action: "allow",
     risk: "low",
     reason: "No blocking policy rule matched.",
+  };
+}
+
+function observeDecision(policy: ToolLatchPolicy, decision: PolicyDecision): PolicyDecision {
+  if (policy.mode !== "observe" || decision.action === "allow") {
+    return decision;
+  }
+
+  return {
+    ...decision,
+    action: "allow",
+    reason: `Observe mode would have ${decision.action}ed this call: ${decision.reason}`,
   };
 }
 

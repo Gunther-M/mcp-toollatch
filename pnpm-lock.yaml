@@ -50,6 +50,70 @@ importers:
 
   packages/cli:
     dependencies:
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
+      micromatch:
+        specifier: ^4.0.8
+        version: 4.0.8
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
+    devDependencies:
+      '@mcp-toollatch/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@mcp-toollatch/config':
+        specifier: workspace:*
+        version: link:../config
+      '@mcp-toollatch/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mcp-toollatch/doctor':
+        specifier: workspace:*
+        version: link:../doctor
+      '@mcp-toollatch/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@mcp-toollatch/proxy':
+        specifier: workspace:*
+        version: link:../proxy
+      '@mcp-toollatch/rules':
+        specifier: workspace:*
+        version: link:../rules
+      '@mcp-toollatch/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+
+  packages/config:
+    dependencies:
+      '@mcp-toollatch/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mcp-toollatch/proxy':
+        specifier: workspace:*
+        version: link:../proxy
+      '@mcp-toollatch/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.19.19
+
+  packages/core: {}
+
+  packages/doctor:
+    dependencies:
       '@mcp-toollatch/audit':
         specifier: workspace:*
         version: link:../audit
@@ -59,17 +123,13 @@ importers:
       '@mcp-toollatch/policy':
         specifier: workspace:*
         version: link:../policy
-      '@mcp-toollatch/proxy':
-        specifier: workspace:*
-        version: link:../proxy
       '@mcp-toollatch/scanner':
         specifier: workspace:*
         version: link:../scanner
-      commander:
-        specifier: ^12.1.0
-        version: 12.1.0
-
-  packages/core: {}
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.19.19
 
   packages/policy:
     dependencies:

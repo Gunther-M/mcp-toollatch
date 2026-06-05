@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +15,8 @@ export interface ScannerOptions {
   platform?: NodeJS.Platform;
   clients?: ClientId[];
   configPaths?: Partial<Record<ClientId, string[]>>;
+  deep?: boolean;
+  deepTimeoutMs?: number;
 }
 
 export interface ClientConfigCandidate {
@@ -33,8 +36,25 @@ export interface NormalizedServerConfig {
   env: Record<string, string>;
   envSummary: Record<string, string>;
   riskLevel: RiskLevel;
+  riskScore: number;
+  riskReasons: string[];
   capabilities: ToolCapability[];
   warnings: string[];
+  tools?: ScannedTool[];
+  deepScan?: DeepScanResult;
+}
+
+export interface ScannedTool {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+export type DeepScanStatus = "ok" | "skipped" | "failed";
+
+export interface DeepScanResult {
+  status: DeepScanStatus;
+  reason?: string;
 }
 
 export interface ClientScanResult {
@@ -66,7 +86,7 @@ export async function scanMcpConfigs(options: ScannerOptions = {}): Promise<Scan
   const clients: ClientScanResult[] = [];
 
   for (const candidate of candidates) {
-    clients.push(await scanCandidate(candidate));
+    clients.push(await scanCandidate(candidate, options));
   }
 
   const dedupedClients = dedupeClientResults(clients);
@@ -187,6 +207,8 @@ export function parseMcpServersFromConfig(
         env: envSummary,
         envSummary,
         riskLevel: risk.level,
+        riskScore: riskScoreFromLevel(risk.level) + risk.capabilities.length * 5 + risk.warnings.length * 10,
+        riskReasons: risk.warnings.length > 0 ? risk.warnings : [`Classified as ${risk.level} from server name/command.`],
         capabilities: risk.capabilities,
         warnings: [
           ...risk.warnings,
@@ -215,9 +237,15 @@ export function summarizeScanReport(report: ScanReport): string {
 
     for (const server of client.servers) {
       lines.push(
-        `  - ${server.name}: ${server.riskLevel.toUpperCase()} [${server.capabilities.join(", ")}]`,
+        `  - ${server.name}: ${server.riskLevel.toUpperCase()} score=${server.riskScore} [${server.capabilities.join(", ")}]`,
       );
       lines.push(`    command: ${server.command ?? "(missing)"} ${server.args.join(" ")}`.trimEnd());
+      if (server.deepScan !== undefined) {
+        lines.push(`    deep: ${server.deepScan.status}${server.deepScan.reason === undefined ? "" : ` - ${server.deepScan.reason}`}`);
+      }
+      if (server.tools !== undefined && server.tools.length > 0) {
+        lines.push(`    tools: ${server.tools.map((tool) => tool.name).join(", ")}`);
+      }
       if (Object.keys(server.envSummary).length > 0) {
         lines.push(`    env: ${JSON.stringify(server.envSummary)}`);
       }
@@ -232,10 +260,10 @@ export function summarizeScanReport(report: ScanReport): string {
   return lines.join("\n").trimEnd();
 }
 
-async function scanCandidate(candidate: ClientConfigCandidate): Promise<ClientScanResult> {
+async function scanCandidate(candidate: ClientConfigCandidate, options: ScannerOptions): Promise<ClientScanResult> {
   let content: string;
   try {
-    content = await fs.readFile(candidate.path, "utf8");
+    content = stripBom(await fs.readFile(candidate.path, "utf8"));
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
       return baseClientResult(candidate, "missing");
@@ -252,10 +280,123 @@ async function scanCandidate(candidate: ClientConfigCandidate): Promise<ClientSc
     return baseClientResult(candidate, "invalid", formatted);
   }
 
+  const servers = parseMcpServersFromConfig(parsed, candidate.client, candidate.displayName, candidate.path);
+  if (options.deep === true) {
+    for (const server of servers) {
+      await enrichServerWithDeepScan(server, options.deepTimeoutMs ?? 3_000);
+    }
+  }
+
   return {
     ...baseClientResult(candidate, "found"),
-    servers: parseMcpServersFromConfig(parsed, candidate.client, candidate.displayName, candidate.path),
+    servers,
   };
+}
+
+export async function enrichServerWithDeepScan(
+  server: NormalizedServerConfig,
+  timeoutMs = 3_000,
+): Promise<NormalizedServerConfig> {
+  if (server.command === undefined) {
+    server.deepScan = { status: "skipped", reason: "Server command is missing." };
+    return server;
+  }
+
+  try {
+    const tools = await probeServerTools({
+      command: server.command,
+      args: server.args,
+      cwd: server.cwd ?? path.dirname(server.configPath),
+      timeoutMs,
+    });
+    const risk = classifyServerRisk({ name: server.name, command: server.command, args: server.args, tools });
+    server.tools = tools;
+    server.capabilities = risk.capabilities;
+    server.riskLevel = risk.level;
+    server.riskScore = riskScoreFromLevel(risk.level) + risk.capabilities.length * 5 + risk.warnings.length * 10 + tools.length;
+    server.riskReasons = risk.warnings.length > 0 ? risk.warnings : [`Deep scan discovered ${tools.length} tools.`];
+    server.warnings = [...new Set([...server.warnings, ...risk.warnings])];
+    server.deepScan = { status: "ok", reason: `Discovered ${tools.length} tools via initialize/tools/list.` };
+  } catch (error) {
+    server.deepScan = { status: "failed", reason: formatError(error) };
+    server.warnings = [...server.warnings, `Deep scan failed: ${formatError(error)}`];
+  }
+
+  return server;
+}
+
+export async function probeServerTools(input: {
+  command: string;
+  args: string[];
+  cwd?: string;
+  timeoutMs?: number;
+}): Promise<ScannedTool[]> {
+  const timeoutMs = input.timeoutMs ?? 3_000;
+  return await new Promise<ScannedTool[]>((resolve, reject) => {
+    const child = spawn(input.command, input.args, {
+      cwd: input.cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const finish = (callback: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (!child.killed) {
+        child.kill();
+      }
+      callback();
+    };
+
+    const timer = setTimeout(() => {
+      finish(() => reject(new Error(`Deep scan timed out after ${timeoutMs}ms.`)));
+    }, timeoutMs);
+
+    child.once("error", (error) => {
+      finish(() => reject(error));
+    });
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      const lines = stdout.split(/\r?\n/);
+      stdout = lines.pop() ?? "";
+      for (const line of lines) {
+        let tools: ScannedTool[] | undefined;
+        try {
+          tools = parseToolsListResponse(line);
+        } catch (error) {
+          finish(() => reject(error));
+          return;
+        }
+        if (tools !== undefined) {
+          finish(() => resolve(tools));
+          return;
+        }
+      }
+    });
+
+    child.once("exit", (code) => {
+      if (!settled) {
+        const suffix = stderr.trim().length === 0 ? "" : ` stderr: ${stderr.trim().slice(0, 240)}`;
+        finish(() => reject(new Error(`Server exited before tools/list completed (code ${code ?? 0}).${suffix}`)));
+      }
+    });
+
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`);
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
+  });
 }
 
 function baseClientResult(
@@ -319,6 +460,51 @@ function summarizeEnv(env: Record<string, string>): Record<string, string> {
   );
 }
 
+function parseToolsListResponse(line: string): ScannedTool[] | undefined {
+  let message: unknown;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+
+  if (!isRecord(message) || message.id !== 2) {
+    return undefined;
+  }
+
+  if (isRecord(message.error)) {
+    throw new Error(typeof message.error.message === "string" ? message.error.message : "tools/list returned an error.");
+  }
+
+  const result = isRecord(message.result) ? message.result : {};
+  const tools = Array.isArray(result.tools) ? result.tools : [];
+  return tools.flatMap((tool): ScannedTool[] => {
+    if (!isRecord(tool) || typeof tool.name !== "string") {
+      return [];
+    }
+    return [
+      {
+        name: tool.name,
+        description: typeof tool.description === "string" ? tool.description : undefined,
+        inputSchema: tool.inputSchema,
+      },
+    ];
+  });
+}
+
+function riskScoreFromLevel(level: RiskLevel): number {
+  switch (level) {
+    case "critical":
+      return 90;
+    case "high":
+      return 70;
+    case "medium":
+      return 40;
+    case "low":
+      return 10;
+  }
+}
+
 function riskWarningsFromCommand(command: string | undefined, args: string[]): string[] {
   const value = [command ?? "", ...args].join(" ");
   const warnings: string[] = [];
@@ -339,6 +525,10 @@ function expandHome(value: string, homeDir: string, platformPath = path): string
     return platformPath.join(homeDir, value.slice(2));
   }
   return value;
+}
+
+function stripBom(value: string): string {
+  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
 }
 
 function formatError(error: unknown): string {
