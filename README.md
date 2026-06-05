@@ -170,6 +170,8 @@ Audit logs are JSONL. Tool arguments are summarized and sensitive keys such as t
 
 See [ROADMAP.md](./ROADMAP.md), [docs/mvp-scope.md](./docs/mvp-scope.md), and [docs/threat-model.md](./docs/threat-model.md).
 
+For hands-on validation, see [docs/demo/phase-2-demo.md](./docs/demo/phase-2-demo.md). For official MCP Inspector checks, see [docs/integration/mcp-inspector.md](./docs/integration/mcp-inspector.md).
+
 ## License
 
 Apache-2.0. See [LICENSE](./LICENSE).

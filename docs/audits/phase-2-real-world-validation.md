@@ -18,7 +18,7 @@ All required source checks passed after the compatibility fixes:
 
 - `pnpm install`: passed
 - `pnpm typecheck`: passed
-- `pnpm test`: passed, 11 test files / 89 tests
+- `pnpm test`: passed, 12 test files / 92 tests
 - `pnpm build`: passed
 - `pnpm lint`: passed
 
@@ -45,6 +45,18 @@ Passed:
 
 Every JSON output parsed successfully. An invalid apply combination, `apply --dry-run --yes`, exited with code 3 and printed a concise user-facing error without a stack trace.
 
+Follow-up dist smoke after the Inspector/docs update also passed:
+
+- `--help`, `--version`
+- `scan --json`, `scan --deep --json`
+- `doctor --json`
+- `init --profile observe|balanced|strict --force`
+- `policy check`
+- `wrap --server fake --print-config -- node tests/fixtures/fake-mcp-server.js`
+- `logs --json`
+- `rules list --json`
+- `config paths --json`
+
 ## 4. Clean Install Test
 
 Used:
@@ -64,6 +76,8 @@ Fresh install smoke passed:
 - `npx toollatch logs --json`
 
 Tarball contents were checked with `tar -tf`. The package included `dist/index.js`, `dist/index.d.ts`, `package.json`, `src/index.ts`, and `LICENSE`; it did not include `.env`, private keys, audit logs, node_modules, test files, or validation temp files.
+
+Follow-up clean install revalidation passed with `npx toollatch --help`, `--version`, `scan --json`, `init --profile strict --force`, `policy check`, `doctor --json`, and `logs --json`. The installed package provided the `toollatch` bin entry.
 
 ## 5. Real Proxy E2E
 
@@ -103,12 +117,43 @@ Attempted:
 npx @modelcontextprotocol/inspector -- node packages/cli/dist/index.js wrap --server fake -- node tests/fixtures/fake-mcp-server.js
 ```
 
-Result: not completed in this environment. The installed Inspector package emitted an engine warning:
+Initial result: not completed with the system Node runtime. The installed Inspector package emitted an engine warning:
 
 - required Node: `>=22.7.5`
 - current Node: `v22.1.0`
 
-The npx/Inspector process was stopped after the limited launch attempt. No business code was changed for this environment issue. The real process-level proxy E2E above is retained as the local substitute evidence.
+Follow-up revalidation resolved the runtime issue without mutating global Node:
+
+- Downloaded official Node `v22.11.0` zip under ignored `.tools/node-v22/`.
+- Used project-local npm cache under `tmp/realworld-validation/npm-cache/`.
+- Verified `node v22.11.0`, `npm 10.9.0`, and `npx 10.9.0`.
+- Added `.tools/` to `.gitignore`; the temporary toolchain was not committed.
+
+Inspector Web launch passed:
+
+- Started `@modelcontextprotocol/inspector@0.22.0` with `MCP_AUTO_OPEN_ENABLED=false`.
+- Inspector UI reached `http://localhost:6274`.
+- Inspector proxy listened on `localhost:6277`.
+- Session token was printed only to ignored temporary logs and is redacted from this report.
+- No Node engine error remained.
+
+Inspector CLI mode passed against ToolLatch-wrapped `tests/fixtures/fake-mcp-server.js` through a temporary Inspector config:
+
+- `tools/list`: passed; returned `read_file`, `write_file`, and `shell_run`.
+- `tools/call read_file path=docs/vision.md`: passed; ToolLatch allowed the safe filesystem call and fake server returned file content.
+- `tools/call read_file path=.env`: passed as a block validation; Inspector received a ToolLatch MCP error instead of hanging.
+- `tools/call read_file path=secret.pem`: passed as a block validation.
+- `tools/call shell_run command="rm -rf /tmp/toollatch-danger"`: passed as a block validation; no real shell command was executed by the fixture.
+- Audit JSONL recorded allow and block decisions and did not contain raw secret contents.
+
+After the final rebuild, Inspector CLI was rerun and passed:
+
+- `tools/list`: exit 0
+- safe `read_file docs/vision.md`: exit 0
+- blocked `read_file .env`: exit 1 with ToolLatch MCP error
+- final audit log contained both `allow` and `block` decisions
+
+Observed Inspector-specific note: for non-interactive Inspector CLI validation, a temporary MCP config without an inner `--` separator is more reliable than nesting two command-line separators. This is documented in `docs/integration/mcp-inspector.md`.
 
 ## 7. Apply / Restore Fixture Validation
 
@@ -128,6 +173,8 @@ Passed:
 - `restore --json` restored from the backup
 - corrupted JSON config failed with a concise parse error and did not overwrite the file
 
+Follow-up manual fixture validation passed for `cursor`, `claude` alias, and `vscode`, including dry-run no-write, safe diff redaction, `--yes` write, backup creation, idempotent repeat apply, restore, and corrupted-config protection.
+
 ## 8. Scan --deep Fault Scenarios
 
 A temporary MCP config included normal, slow, bad JSON, stderr-noise, and abnormal-exit servers.
@@ -140,6 +187,8 @@ Results:
 - bad JSON server: `failed`
 - abnormal exit server: `failed`
 - overall `scan --deep --json` output remained valid JSON
+
+Follow-up fault matrix revalidation passed with normal, slow, bad JSON, stderr-noise, and abnormal-exit fixture servers. Normal and stderr-noise servers returned `ok`; slow, bad JSON, and abnormal-exit servers returned `failed`; stderr noise did not leak into JSON stdout.
 
 ## 9. Security And Redaction
 
@@ -167,8 +216,9 @@ Docs reviewed:
 
 - README clearly states beta-oriented status and that MCP ToolLatch is not a complete sandbox.
 - Threat model now explicitly mentions no kernel isolation and no complete prompt injection coverage.
-- `docs/integration/mcp-inspector.md` does not exist.
-- `docs/demo` and `scripts/demo` do not exist.
+- Added `docs/integration/mcp-inspector.md` with Web Inspector and CLI-mode validation steps, Node version troubleshooting, and audit checks.
+- Added `docs/demo/phase-2-demo.md` with a local fixture-only phase 2 demo.
+- Demo documentation scopes all temporary files to `tmp/phase2-demo/` and does not instruct users to read real `.env`, SSH, or certificate files.
 
 ## 11. Fixed Issues
 
@@ -179,15 +229,18 @@ Docs reviewed:
 - Updated README and client setup docs for explicit dry-run/write aliases.
 - Clarified threat model wording for kernel isolation.
 - Added tests for the new apply aliases and safe change summaries.
+- Added the missing MCP Inspector validation guide.
+- Added a fixture-only phase 2 demo guide.
+- Added documentation safeguard tests for Inspector prerequisites, demo scope, and ignored temporary toolchains.
+- Completed MCP Inspector validation with a project-local Node `v22.11.0` runtime.
 
 ## 12. Remaining Issues
 
-- MCP Inspector was not fully validated because this environment runs Node `v22.1.0`, while Inspector `0.22.0` requires Node `>=22.7.5`.
 - Generated balanced policy denies non-interactive shell `echo` as confirmation-required shell access. This is safe, but it limits the ability to demonstrate a harmless shell allow without a future explicit command allowlist.
-- No `docs/integration/mcp-inspector.md`, `docs/demo`, or `scripts/demo` currently exists.
+- The Web Inspector UI was verified as reachable and the official Inspector CLI mode executed real MCP methods. Full browser click-through was not required because CLI mode provided repeatable method-level evidence.
 
 ## 13. Tag And Trial Recommendation
 
 Recommendation: acceptable for small-scope external beta trials as `v0.3.0-beta.1`, provided users understand it is a local policy/audit gateway, not a production sandbox.
 
-Before broader release, rerun MCP Inspector on Node `>=22.7.5` and document the result.
+Before broader release, keep using the Inspector guide as a release checklist and decide whether to add an explicit safe shell allowlist profile. The current balanced non-interactive shell behavior is conservative and acceptable for beta.
