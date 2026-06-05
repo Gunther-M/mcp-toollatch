@@ -48,6 +48,7 @@ This document describes the current local risk model for MCP ToolLatch.
 ## Not Covered
 
 - full sandbox isolation
+- kernel isolation or process/container isolation
 - kernel-level protection
 - all prompt injection cases
 - enterprise compliance

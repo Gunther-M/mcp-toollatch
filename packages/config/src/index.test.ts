@@ -18,6 +18,34 @@ describe("client config apply planning", () => {
     expect(await fs.readFile(configPath, "utf8")).toBe(original);
   });
 
+  it("returns a safe change summary without leaking secret arguments", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "toollatch-config-change-summary-"));
+    const configPath = path.join(tmp, "mcp.json");
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          fs: {
+            command: "node",
+            args: ["server.js", "--token=secret-token-value"],
+            env: { apiKey: "secret-api-key-value" },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const plan = await createApplyConfigPlan({ client: "cursor", serverName: "fs", configPath });
+    const summary = JSON.stringify(plan.changes);
+
+    expect(plan.changes.map((change) => change.path)).toEqual([
+      "mcpServers.fs.command",
+      "mcpServers.fs.args",
+    ]);
+    expect(summary).not.toContain("secret-token-value");
+    expect(summary).not.toContain("secret-api-key-value");
+  });
+
   it("writes a backup before applying and can restore it", async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "toollatch-config-apply-"));
     const configPath = path.join(tmp, "mcp.json");

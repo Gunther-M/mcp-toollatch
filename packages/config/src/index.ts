@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
-import { AppError, isRecord } from "@mcp-toollatch/core";
+import { AppError, isRecord, redactObject } from "@mcp-toollatch/core";
 import { createWrappedServerConfig } from "@mcp-toollatch/proxy";
 import { getClientConfigCandidates, type ClientId } from "@mcp-toollatch/scanner";
 
@@ -23,9 +23,16 @@ export interface ApplyConfigPlan {
   changed: boolean;
   alreadyWrapped: boolean;
   backupPath?: string;
+  changes: ApplyConfigChange[];
   originalConfig: string;
   updatedConfig: string;
   message: string;
+}
+
+export interface ApplyConfigChange {
+  path: string;
+  before: unknown;
+  after: unknown;
 }
 
 export interface RestoreConfigInput {
@@ -65,6 +72,7 @@ export async function createApplyConfigPlan(input: ApplyConfigInput): Promise<Ap
       alreadyWrapped: true,
       originalConfig,
       updatedConfig: originalConfig,
+      changes: [],
       message: `Server "${input.serverName}" is already wrapped by MCP ToolLatch.`,
     };
   }
@@ -89,6 +97,18 @@ export async function createApplyConfigPlan(input: ApplyConfigInput): Promise<Ap
     alreadyWrapped: false,
     originalConfig,
     updatedConfig: `${JSON.stringify(parsed, null, 2)}\n`,
+    changes: [
+      {
+        path: `mcpServers.${input.serverName}.command`,
+        before: redactObject(command),
+        after: redactObject(wrapped.command),
+      },
+      {
+        path: `mcpServers.${input.serverName}.args`,
+        before: redactObject(args),
+        after: redactObject(wrapped.args),
+      },
+    ],
     message: `Dry run prepared wrapped config for "${input.serverName}". Re-run with --write to apply.`,
   };
 }

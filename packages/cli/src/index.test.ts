@@ -1,9 +1,13 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProgram } from "./index";
 
 describe("CLI", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    process.exitCode = undefined;
   });
 
   it("registers required commands", () => {
@@ -44,4 +48,52 @@ describe("CLI", () => {
       args: ["wrap", "--server", "mcp-server", "--policy", "toollatch.policy.yaml", "--", "node", "server.js"],
     });
   });
+
+  it("accepts claude as an alias for claude-desktop during apply dry-run", async () => {
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const configPath = await writeTempConfig();
+
+    await createProgram().parseAsync(
+      ["apply", "--client", "claude", "--server", "fs", "--config", configPath, "--dry-run", "--json"],
+      { from: "user" },
+    );
+
+    const parsed = JSON.parse(String(output.mock.calls[0]?.[0])) as { client: string; changed: boolean };
+    expect(parsed.client).toBe("claude-desktop");
+    expect(parsed.changed).toBe(true);
+  });
+
+  it("treats --yes as a write alias for apply", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const configPath = await writeTempConfig();
+
+    await createProgram().parseAsync(
+      ["apply", "--client", "cursor", "--server", "fs", "--config", configPath, "--yes", "--json"],
+      { from: "user" },
+    );
+
+    expect(await fs.readFile(configPath, "utf8")).toContain("toollatch");
+  });
+
+  it("rejects apply --dry-run when combined with write aliases", async () => {
+    const configPath = await writeTempConfig();
+
+    await expect(
+      createProgram().parseAsync(
+        ["apply", "--client", "cursor", "--server", "fs", "--config", configPath, "--dry-run", "--yes"],
+        { from: "user" },
+      ),
+    ).rejects.toThrow(/dry-run/);
+  });
 });
+
+async function writeTempConfig(): Promise<string> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "toollatch-cli-apply-"));
+  const configPath = path.join(tmp, "mcp.json");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({ mcpServers: { fs: { command: "node", args: ["server.js"] } } }),
+    "utf8",
+  );
+  return configPath;
+}

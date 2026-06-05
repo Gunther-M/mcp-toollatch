@@ -104,14 +104,17 @@ toollatch rules list --json
 Prepare a wrapped MCP client configuration. Dry-run is the default and does not write files:
 
 ```bash
-toollatch apply --client cursor --server filesystem --config ./mcp.json --json
+toollatch apply --client cursor --server filesystem --config ./mcp.json --dry-run --json
 ```
 
 Write only with an explicit flag. ToolLatch writes a backup before changing the config:
 
 ```bash
 toollatch apply --client cursor --server filesystem --config ./mcp.json --write
+toollatch apply --client cursor --server filesystem --config ./mcp.json --yes
 ```
+
+`--yes` is a write alias for scripted validation. `claude` is accepted as a client alias for `claude-desktop`.
 
 Restore from a backup:
 

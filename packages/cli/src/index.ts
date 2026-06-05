@@ -269,11 +269,13 @@ export function createProgram(): Command {
   program
     .command("apply")
     .description("Safely wrap a configured MCP server in a client config. Dry-run by default.")
-    .requiredOption("--client <client>", "cursor, claude-desktop, or vscode", parseClient)
+    .requiredOption("--client <client>", "cursor, claude, claude-desktop, or vscode", parseClient)
     .requiredOption("--server <name>", "server name in the MCP client config")
     .option("--config <file>", "explicit client config path")
     .option("--policy <file>", "policy path to place in wrapped command", defaultPolicyFileName)
+    .option("--dry-run", "prepare and print a safe change summary without writing files")
     .option("--write", "write the updated config after creating a backup")
+    .option("--yes", "write alias for --write, intended for scripted validation")
     .option("--json", "print structured JSON")
     .action(
       async (options: {
@@ -281,15 +283,20 @@ export function createProgram(): Command {
         server: string;
         config?: string;
         policy: string;
+        dryRun?: boolean;
         write?: boolean;
+        yes?: boolean;
         json?: boolean;
       }) => {
+        if (options.dryRun === true && (options.write === true || options.yes === true)) {
+          throw new AppError("CONFIG_INVALID", "--dry-run cannot be combined with --write or --yes.");
+        }
         const result = await applyWrappedConfig({
           client: options.client,
           serverName: options.server,
           configPath: options.config,
           policyPath: options.policy,
-          write: options.write === true,
+          write: options.write === true || options.yes === true,
         });
 
         if (options.json === true) {
@@ -302,8 +309,14 @@ export function createProgram(): Command {
         if (result.backupPath !== undefined) {
           console.log(`Backup: ${result.backupPath}`);
         }
-        if (options.write !== true && result.changed) {
-          console.log("No files were changed. Re-run with --write to apply after reviewing the JSON diff.");
+        if (result.changes.length > 0) {
+          console.log("Changes:");
+          for (const change of result.changes) {
+            console.log(`- ${change.path}: ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)}`);
+          }
+        }
+        if (options.write !== true && options.yes !== true && result.changed) {
+          console.log("No files were changed. Re-run with --write or --yes to apply after reviewing the JSON diff.");
         }
       },
     );
@@ -467,10 +480,13 @@ function handleCliError(error: unknown): void {
 }
 
 function parseClient(value: string): ClientId {
+  if (value === "claude") {
+    return "claude-desktop";
+  }
   if (value === "cursor" || value === "claude-desktop" || value === "vscode") {
     return value;
   }
-  throw new InvalidArgumentError("Expected one of: cursor, claude-desktop, vscode");
+  throw new InvalidArgumentError("Expected one of: cursor, claude, claude-desktop, vscode");
 }
 
 function parsePolicyProfile(value: string): PolicyProfile {
@@ -607,6 +623,7 @@ function formatApplyConfigResult(result: Awaited<ReturnType<typeof applyWrappedC
   changed: boolean;
   alreadyWrapped: boolean;
   backupPath?: string;
+  changes: Array<{ path: string; before: unknown; after: unknown }>;
   message: string;
 } {
   return {
@@ -616,6 +633,7 @@ function formatApplyConfigResult(result: Awaited<ReturnType<typeof applyWrappedC
     changed: result.changed,
     alreadyWrapped: result.alreadyWrapped,
     backupPath: result.backupPath,
+    changes: result.changes,
     message: result.message,
   };
 }
