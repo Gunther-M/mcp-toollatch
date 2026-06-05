@@ -1,43 +1,67 @@
 # Policy Reference
 
-The policy format is intentionally small for the first version. The exact schema may change before v0.1.0.
+The policy format is intentionally small for the first version. It is YAML and validated with Zod before the proxy starts.
 
 ## Example
 
 ```yaml
 version: 1
-mode: observe
+mode: enforce
 
 defaults:
-  action: ask
+  unknown_tool: confirm
+  log_all_calls: true
+  non_interactive_confirm: deny
 
 rules:
-  - id: block-sensitive-files
+  - id: RULE-001
     description: Block direct access to common secret files.
+    severity: critical
     match:
-      tool: filesystem.read
-      paths:
-        - "**/.env"
-        - "**/*.pem"
-        - "**/*.key"
+      category: filesystem
+    deny_paths:
+      - .env
+      - .env.*
+      - ~/.ssh/**
+      - ~/.aws/**
+      - ~/.config/**
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/*.crt"
+      - "**/*.p12"
+      - "**/*.pfx"
     action: block
 
-  - id: ask-before-shell
+  - id: RULE-004
     description: Require approval before shell command execution.
+    severity: critical
     match:
-      tool: shell.run
-    action: ask
+      category: shell
+    deny_commands:
+      - "rm -rf"
+      - "sudo"
+      - "curl * | sh"
+      - "wget * | sh"
+      - "chmod 777"
+      - "dd if="
+    action: block
 
 audit:
   enabled: true
-  path: .toollatch/audit.log
+  path: .toollatch/audit.jsonl
 ```
 
 ## Planned Fields
 
 - `version` - policy file version.
 - `mode` - `observe` or `enforce`.
-- `defaults.action` - fallback decision when no rule matches.
-- `rules[].match` - tool name, arguments, path, or command pattern selectors.
-- `rules[].action` - `allow`, `ask`, or `block`.
+- `defaults.unknown_tool` - fallback decision for unknown tools.
+- `defaults.log_all_calls` - whether intercepted tool calls should be audited.
+- `defaults.non_interactive_confirm` - `deny` or `allow` when confirmation is needed but no TTY is available.
+- `rules[].match.category` - `filesystem`, `shell`, `network`, `database`, or `unknown`.
+- `rules[].action` - `allow`, `confirm`, or `block`.
+- `rules[].allow_paths` - path globs allowed for matching filesystem tools.
+- `rules[].deny_paths` - path globs blocked before allow rules.
+- `rules[].deny_commands` - shell command patterns blocked or confirmed.
+- `rules[].require_confirm` - require local confirmation for a matching rule.
 - `audit` - local audit log settings.

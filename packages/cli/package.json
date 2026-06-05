@@ -4,6 +4,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "description": "CLI for MCP ToolLatch.",
+  "types": "./src/index.ts",
   "bin": {
     "toollatch": "dist/index.js"
   },
@@ -12,7 +13,7 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
@@ -24,6 +25,11 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@mcp-toollatch/audit": "workspace:*",
+    "@mcp-toollatch/core": "workspace:*",
+    "@mcp-toollatch/policy": "workspace:*",
+    "@mcp-toollatch/proxy": "workspace:*",
+    "@mcp-toollatch/scanner": "workspace:*",
     "commander": "^12.1.0"
   }
 }

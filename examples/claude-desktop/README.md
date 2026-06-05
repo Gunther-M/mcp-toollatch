@@ -1,5 +1,44 @@
 # Claude Desktop Example
 
-Placeholder for Claude Desktop MCP configuration examples.
+Run a scan:
 
-Future examples will show how to scan Claude Desktop config and route selected stdio MCP servers through MCP ToolLatch.
+```bash
+toollatch scan --client claude-desktop
+```
+
+Original `claude_desktop_config.json` entry:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "node",
+      "args": ["./server.js"]
+    }
+  }
+}
+```
+
+Wrapped entry:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "toollatch",
+      "args": [
+        "wrap",
+        "--server",
+        "filesystem",
+        "--policy",
+        "toollatch.policy.yaml",
+        "--",
+        "node",
+        "./server.js"
+      ]
+    }
+  }
+}
+```
+
+MCP ToolLatch does not edit this file automatically in phase 1.

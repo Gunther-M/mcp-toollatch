@@ -4,12 +4,13 @@
   "type": "module",
   "license": "Apache-2.0",
   "description": "Shared core metadata and utilities for MCP ToolLatch.",
+  "types": "./src/index.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"

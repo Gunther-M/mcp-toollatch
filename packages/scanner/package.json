@@ -4,12 +4,13 @@
   "type": "module",
   "license": "Apache-2.0",
   "description": "MCP configuration scanner for MCP ToolLatch.",
+  "types": "./src/index.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
@@ -18,5 +19,10 @@
     "build": "tsup src/index.ts --format esm --dts --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@mcp-toollatch/core": "workspace:*",
+    "@mcp-toollatch/rules": "workspace:*",
+    "jsonc-parser": "^3.3.1"
   }
 }

@@ -1,19 +1,34 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createProgram, placeholderMessages } from "./index";
+import { createProgram } from "./index";
 
-describe("toollatch CLI placeholders", () => {
+describe("CLI", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it.each(Object.keys(placeholderMessages) as Array<keyof typeof placeholderMessages>)(
-    "prints the %s placeholder",
-    (command) => {
-      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  it("registers required commands", () => {
+    const commands = createProgram().commands.map((command) => command.name());
+    expect(commands).toContain("scan");
+    expect(commands).toContain("init");
+    expect(commands).toContain("policy");
+    expect(commands).toContain("wrap");
+    expect(commands).toContain("logs");
+  });
 
-      createProgram().parse([command], { from: "user" });
+  it("sets a useful CLI name", () => {
+    expect(createProgram().name()).toBe("toollatch");
+  });
 
-      expect(log).toHaveBeenCalledWith(placeholderMessages[command]);
-    },
-  );
+  it("registers scan JSON, output, and client options", () => {
+    const scan = createProgram().commands.find((command) => command.name() === "scan");
+    expect(scan?.options.map((option) => option.long)).toEqual(
+      expect.arrayContaining(["--json", "--output", "--client"]),
+    );
+  });
+
+  it("rejects invalid decision values for logs", () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const logs = createProgram().commands.find((command) => command.name() === "logs");
+    expect(() => logs?.parse(["--decision", "nope"], { from: "user" })).toThrow(/allow/);
+  });
 });

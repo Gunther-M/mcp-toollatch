@@ -4,12 +4,13 @@
   "type": "module",
   "license": "Apache-2.0",
   "description": "Policy schema and future evaluation logic for MCP ToolLatch.",
+  "types": "./src/index.ts",
   "files": [
     "dist"
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
@@ -20,7 +21,13 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@mcp-toollatch/core": "workspace:*",
+    "@mcp-toollatch/rules": "workspace:*",
+    "micromatch": "^4.0.8",
     "yaml": "^2.7.0",
     "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/micromatch": "^4.0.9"
   }
 }
