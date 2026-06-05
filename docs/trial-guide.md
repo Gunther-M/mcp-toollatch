@@ -86,6 +86,17 @@ Bug reports and feature requests are most useful when they include:
 - Error output or concise logs.
 - Whether `scan --json`, `doctor --json`, or `logs --json` reproduces the issue.
 
+## How To Report Issues
+
+Use the most appropriate path:
+
+- Beta trial feedback: [`.github/ISSUE_TEMPLATE/beta_trial_feedback.md`](../.github/ISSUE_TEMPLATE/beta_trial_feedback.md)
+- Sanitized security report template: [`.github/ISSUE_TEMPLATE/security_report.md`](../.github/ISSUE_TEMPLATE/security_report.md)
+- Discussion or pinned issue draft: [`docs/community/beta-trial-discussion-template.md`](./community/beta-trial-discussion-template.md)
+- Private security guidance: [`SECURITY.md`](../SECURITY.md)
+
+For possible real credential exposure, policy bypass, arbitrary command execution, or private data leakage, do not open a detailed public issue. Follow `SECURITY.md` and share only a sanitized minimal reproduction publicly.
+
 ## Privacy Reminder
 
 - Do not attach `.env` files.
