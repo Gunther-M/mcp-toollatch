@@ -10,6 +10,8 @@ assignees: ""
 
 Describe the bug clearly.
 
+Do not include secrets, tokens, private keys, certificates, cookies, authorization headers, or raw `.env` contents.
+
 ## Steps to Reproduce
 
 1.
@@ -29,8 +31,17 @@ What happened instead?
 - OS:
 - Node.js:
 - pnpm:
-- MCP client:
+- MCP client: Cursor / Claude Desktop / VS Code / other
+- MCP server type: real server / fixture / unknown
+- ToolLatch version:
+- Install method: source / local tarball / other
 
-## Additional Context
+## Logs
 
-Add logs or screenshots if useful. Do not include secrets, tokens, or private configuration.
+Paste only redacted logs or command output. If relevant, include:
+
+- `toollatch scan --json`
+- `toollatch doctor --json`
+- `toollatch logs --json`
+
+Confirm that logs and configs are redacted before submitting.

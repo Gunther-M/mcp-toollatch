@@ -1,14 +1,45 @@
 # MCP ToolLatch
 
-Local policy, approval, and audit for MCP tool calls.
+MCP ToolLatch is a local policy, approval, and audit gateway for MCP tool calls.
 
-MCP ToolLatch is a local MCP security gateway for AI Agent tool calls. It scans MCP client configuration, generates local policies, wraps stdio MCP servers, intercepts risky `tools/call` requests, asks for confirmation when needed, and writes redacted JSONL audit logs.
+It scans MCP client configuration, generates local policies, wraps stdio MCP servers, intercepts risky `tools/call` requests, asks for confirmation when needed, and writes redacted JSONL audit logs.
 
 ## Status
 
-Beta-oriented local tool / active development / not production-ready.
+Current release: `v0.3.0-beta.1`.
 
-MCP ToolLatch is not a complete sandbox. It does not provide kernel isolation, complete prompt-injection defense, enterprise compliance, or guaranteed containment of malicious MCP servers. It is a tool-call layer policy, confirmation, and audit gateway.
+Beta-oriented local tool / active development / not a production-grade sandbox.
+
+MCP ToolLatch is not a complete sandbox. It does not provide kernel-level protection, complete prompt-injection defense, enterprise compliance, or guaranteed containment of malicious MCP servers. It is suitable for small-scope trials and developer-local validation.
+
+## Install
+
+### From Source
+
+```bash
+git clone <repo-url>
+cd mcp-toollatch
+pnpm install
+pnpm build
+node packages/cli/dist/index.js --help
+node packages/cli/dist/index.js --version
+```
+
+During local development, commands in this README are shown as `toollatch ...`. From source, use `node packages/cli/dist/index.js ...` unless you have linked or installed the CLI.
+
+### Local Tarball
+
+The package has not been formally published to npm yet. For a local package trial:
+
+```bash
+pnpm --dir packages/cli pack --pack-destination ./tmp/packs
+mkdir -p ./tmp/install-smoke
+cd ./tmp/install-smoke
+npm init -y
+npm install ../packs/mcp-toollatch-cli-0.3.0-beta.1.tgz
+npx toollatch --help
+npx toollatch --version
+```
 
 ## Install And Verify
 
@@ -30,14 +61,15 @@ node packages/cli/dist/index.js --help
 
 ```bash
 toollatch scan --json
-toollatch scan --deep --client cursor --config ./mcp.json --json
-toollatch init --profile balanced --force
-toollatch doctor
-toollatch config paths
-toollatch rules list
+toollatch scan --deep --json
+toollatch init --profile strict --force
+toollatch policy check
+toollatch doctor --json
 toollatch wrap --server filesystem -- node ./server.js
 toollatch logs --json
 ```
+
+For a fixture-only walkthrough, see [docs/demo/phase-2-demo.md](./docs/demo/phase-2-demo.md). For official MCP Inspector checks, see [docs/integration/mcp-inspector.md](./docs/integration/mcp-inspector.md).
 
 ## Commands
 
@@ -170,7 +202,7 @@ Audit logs are JSONL. Tool arguments are summarized and sensitive keys such as t
 
 See [ROADMAP.md](./ROADMAP.md), [docs/mvp-scope.md](./docs/mvp-scope.md), and [docs/threat-model.md](./docs/threat-model.md).
 
-For hands-on validation, see [docs/demo/phase-2-demo.md](./docs/demo/phase-2-demo.md). For official MCP Inspector checks, see [docs/integration/mcp-inspector.md](./docs/integration/mcp-inspector.md).
+For early users, see [docs/trial-guide.md](./docs/trial-guide.md) and [docs/releases/v0.3.0-beta.1.md](./docs/releases/v0.3.0-beta.1.md).
 
 ## License
 

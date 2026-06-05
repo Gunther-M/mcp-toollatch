@@ -1,6 +1,8 @@
 # MCP ToolLatch v0.3.0-beta.1 Release Notes
 
-This beta focuses on making MCP ToolLatch installable, diagnosable, and easier to attach to real client configs.
+Canonical release notes: [docs/releases/v0.3.0-beta.1.md](./releases/v0.3.0-beta.1.md).
+
+This beta focuses on making MCP ToolLatch installable, diagnosable, and easier to attach to real client configs. It is suitable for small-scope local trials, not production sandboxing.
 
 ## Highlights
 
@@ -11,9 +13,10 @@ This beta focuses on making MCP ToolLatch installable, diagnosable, and easier t
 - `toollatch restore` recovers a client config from an apply backup.
 - `toollatch logs export` writes redacted JSON or CSV audit exports.
 - `toollatch config paths` and `toollatch rules list` expose client path candidates and built-in rule references.
+- MCP Inspector and fixture-only demo docs are available for release validation.
 
 ## Boundaries
 
 - This release does not provide kernel sandboxing, RBAC, SaaS policy management, or a web dashboard.
 - Deep scan does not call tools and does not prove a server is safe.
-- Manual MCP Inspector or official SDK compatibility testing is still recommended before broad external release.
+- MCP ToolLatch does not guarantee defense against every prompt injection or malicious MCP server.
