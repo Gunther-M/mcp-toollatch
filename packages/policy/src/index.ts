@@ -424,13 +424,6 @@ function evaluateGenericRules(
   category: string,
   extracted: ExtractedToolArguments,
 ): PolicyDecision {
-  const rules = applicableRules(policy, category);
-  const confirmRule = rules.find((rule) => rule.require_confirm || rule.action === "confirm");
-
-  if (confirmRule !== undefined) {
-    return makeDecision("confirm", confirmRule.severity, confirmRule, "Tool call requires confirmation by policy.");
-  }
-
   if (category === "unknown") {
     const action = policy.defaults.unknown_tool;
     const risk: RiskLevel = extracted.sensitiveFieldNames.length > 0 ? "high" : "medium";
@@ -442,6 +435,13 @@ function evaluateGenericRules(
       matchedRuleTitle: "Unknown tool",
       suggestedFix: "Add an explicit policy rule after reviewing this MCP tool.",
     };
+  }
+
+  const rules = applicableRules(policy, category);
+  const confirmRule = rules.find((rule) => rule.require_confirm || rule.action === "confirm");
+
+  if (confirmRule !== undefined) {
+    return makeDecision("confirm", confirmRule.severity, confirmRule, "Tool call requires confirmation by policy.");
   }
 
   return allowDecision();
@@ -484,6 +484,9 @@ function allowDecision(): PolicyDecision {
 
 function normalizePolicyPathPattern(pattern: string, cwd: string, homeDir: string): string {
   if (pattern.includes("*")) {
+    if (pattern.startsWith("**/")) {
+      return normalizeSlashes(pattern);
+    }
     const expanded = pattern.startsWith("~") ? normalizePathForMatch(pattern, cwd, homeDir) : pattern;
     if (expanded.startsWith(".") || !path.isAbsolute(expanded.replace(/\*/g, "x"))) {
       return normalizeSlashes(path.resolve(cwd, expanded));

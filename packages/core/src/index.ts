@@ -122,6 +122,9 @@ export const sensitiveKeyPattern =
 
 export function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
+    if (containsObviousSecret(value)) {
+      return "[REDACTED]";
+    }
     if (value.length <= 4) {
       return "[REDACTED]";
     }
@@ -135,6 +138,14 @@ export function redactValue(value: unknown): unknown {
   return "[REDACTED]";
 }
 
+export function containsObviousSecret(value: string): boolean {
+  return (
+    /(?:token|secret|password|passwd|api[_-]?key|authorization|cookie)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{6,}/i.test(
+      value,
+    ) || /bearer\s+[A-Za-z0-9._~+/=-]{6,}/i.test(value)
+  );
+}
+
 export function redactObject(value: unknown, depth = 0): unknown {
   if (depth > 6) {
     return "[MAX_DEPTH]";
@@ -142,6 +153,10 @@ export function redactObject(value: unknown, depth = 0): unknown {
 
   if (Array.isArray(value)) {
     return value.map((item) => redactObject(item, depth + 1));
+  }
+
+  if (typeof value === "string" && containsObviousSecret(value)) {
+    return "[REDACTED]";
   }
 
   if (!isRecord(value)) {

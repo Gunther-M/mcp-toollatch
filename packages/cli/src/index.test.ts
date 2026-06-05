@@ -31,4 +31,17 @@ describe("CLI", () => {
     const logs = createProgram().commands.find((command) => command.name() === "logs");
     expect(() => logs?.parse(["--decision", "nope"], { from: "user" })).toThrow(/allow/);
   });
+
+  it("prints a wrapped config with a default server name", async () => {
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createProgram().parseAsync(["wrap", "--print-config", "--", "node", "server.js"], {
+      from: "user",
+    });
+
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
+      command: "toollatch",
+      args: ["wrap", "--server", "mcp-server", "--policy", "toollatch.policy.yaml", "--", "node", "server.js"],
+    });
+  });
 });

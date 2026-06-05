@@ -20,13 +20,17 @@ export const defaultSensitivePathPatterns = [
   "**/.env",
   "**/.env.*",
   "~/.ssh/**",
+  "**/.ssh/**",
   "~/.aws/**",
+  "**/.aws/**",
   "~/.config/**",
+  "**/.config/**",
   "**/*.pem",
   "**/*.key",
   "**/*.crt",
   "**/*.p12",
   "**/*.pfx",
+  "**/id_rsa",
 ] as const;
 
 export const defaultAllowedPathPatterns = ["./src/**", "./docs/**", "./examples/**"] as const;

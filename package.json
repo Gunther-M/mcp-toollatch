@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r --sort build",
     "dev": "pnpm --filter @mcp-toollatch/cli dev",
-    "test": "vitest run --passWithNoTests",
+    "test": "pnpm build && vitest run --passWithNoTests",
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "pnpm -r --sort typecheck",
@@ -26,6 +26,7 @@
     "node": ">=20.11.0"
   },
   "devDependencies": {
+    "@mcp-toollatch/cli": "workspace:*",
     "@eslint/js": "^9.28.0",
     "@types/node": "^22.15.29",
     "eslint": "^9.28.0",

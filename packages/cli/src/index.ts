@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline/promises";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Command, InvalidArgumentError } from "commander";
 import { readAuditEvents, type AuditQuery } from "@mcp-toollatch/audit";
 import { AppError, exitCodes, projectMetadata, type PolicyDecisionAction } from "@mcp-toollatch/core";
@@ -72,7 +73,7 @@ export function createProgram(): Command {
   program
     .command("wrap")
     .description("Run a stdio MCP proxy around a real MCP server.")
-    .requiredOption("--server <name>", "logical MCP server name for audit logs")
+    .option("--server <name>", "logical MCP server name for audit logs")
     .option("--policy <file>", "policy file path", defaultPolicyFileName)
     .option("--audit-log <file>", "audit JSONL path; defaults to policy audit.path")
     .option("--print-config", "print a wrapped MCP server config snippet and exit")
@@ -81,18 +82,19 @@ export function createProgram(): Command {
     .action(
       async (
         commandParts: string[],
-        options: { server: string; policy: string; auditLog?: string; printConfig?: boolean },
+        options: { server?: string; policy: string; auditLog?: string; printConfig?: boolean },
       ) => {
         const [command, ...args] = commandParts;
         if (command === undefined) {
           throw new AppError("PROXY_FAILED", "Missing real server command. Usage: toollatch wrap --server name -- node server.js");
         }
 
+        const serverName = options.server?.trim();
         if (options.printConfig === true) {
           console.log(
             JSON.stringify(
               createWrappedServerConfig({
-                serverName: options.server,
+                serverName: serverName === undefined || serverName.length === 0 ? "mcp-server" : serverName,
                 command,
                 args,
                 policyPath: options.policy,
@@ -104,10 +106,14 @@ export function createProgram(): Command {
           return;
         }
 
+        if (serverName === undefined || serverName.length === 0) {
+          throw new AppError("PROXY_FAILED", "Missing --server name. Usage: toollatch wrap --server name -- node server.js");
+        }
+
         const policy = await loadPolicyFile(path.resolve(options.policy));
         const auditLogPath = path.resolve(options.auditLog ?? policy.audit.path);
         const exitCode = await runStdioProxy({
-          serverName: options.server,
+          serverName,
           command,
           args,
           policy,
@@ -295,8 +301,19 @@ function isCommanderExit(error: unknown): error is { code: string; exitCode: num
   );
 }
 
-const isDirectRun =
-  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+function isDirectCliRun(): boolean {
+  if (process.argv[1] === undefined) {
+    return false;
+  }
+
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return import.meta.url === pathToFileURL(process.argv[1]).href;
+  }
+}
+
+const isDirectRun = isDirectCliRun();
 
 if (isDirectRun) {
   void run();

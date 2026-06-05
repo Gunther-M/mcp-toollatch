@@ -113,7 +113,6 @@ export async function runStdioProxy(options: ProxyOptions): Promise<number> {
     cwd: options.cwd,
     env: options.env ?? process.env,
     stdio: ["pipe", "pipe", "pipe"],
-    shell: process.platform === "win32",
   });
 
   bridgeServerOutput(child);
@@ -189,6 +188,7 @@ async function bridgeClientInput(
   child: ChildProcessWithoutNullStreams,
   options: ProxyOptions,
 ): Promise<void> {
+  const pendingLines = new Set<Promise<void>>();
   const lineReader = readline.createInterface({
     input: process.stdin,
     crlfDelay: Infinity,
@@ -196,15 +196,24 @@ async function bridgeClientInput(
   });
 
   lineReader.on("line", (line) => {
-    void handleClientLine(line, child, options);
+    const task = handleClientLine(line, child, options).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`MCP ToolLatch proxy error: ${message}\n`);
+    });
+    pendingLines.add(task);
+    void task.finally(() => {
+      pendingLines.delete(task);
+    });
   });
 
   await new Promise<void>((resolve) => {
-    lineReader.once("close", () => {
-      child.stdin.end();
-      resolve();
-    });
+    lineReader.once("close", resolve);
   });
+
+  await Promise.allSettled([...pendingLines]);
+  if (!child.stdin.destroyed && !child.stdin.writableEnded) {
+    child.stdin.end();
+  }
 }
 
 async function handleClientLine(
@@ -221,7 +230,7 @@ async function handleClientLine(
   try {
     message = JSON.parse(trimmed) as JsonRpcRequest;
   } catch {
-    child.stdin.write(`${line}\n`);
+    writeChildInput(child, `${line}\n`);
     return;
   }
 
@@ -242,7 +251,14 @@ async function handleClientLine(
     return;
   }
 
-  child.stdin.write(serializeJsonRpcMessage(result.message));
+  writeChildInput(child, serializeJsonRpcMessage(result.message));
+}
+
+function writeChildInput(child: ChildProcessWithoutNullStreams, message: string): void {
+  if (child.stdin.destroyed || child.stdin.writableEnded) {
+    return;
+  }
+  child.stdin.write(message);
 }
 
 function bridgeServerOutput(child: ChildProcessWithoutNullStreams): void {

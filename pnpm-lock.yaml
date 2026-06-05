@@ -11,6 +11,9 @@ importers:
       '@eslint/js':
         specifier: ^9.28.0
         version: 9.39.4
+      '@mcp-toollatch/cli':
+        specifier: workspace:*
+        version: link:packages/cli
       '@types/node':
         specifier: ^22.15.29
         version: 22.19.19

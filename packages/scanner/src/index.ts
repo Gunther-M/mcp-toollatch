@@ -81,6 +81,7 @@ export function getClientConfigCandidates(options: ScannerOptions = {}): ClientC
   const homeDir = options.homeDir ?? os.homedir();
   const platform = options.platform ?? process.platform;
   const appDataDir = options.appDataDir ?? process.env.APPDATA ?? path.join(homeDir, "AppData", "Roaming");
+  const platformPath = pathForPlatform(platform);
   const candidates: ClientConfigCandidate[] = [];
 
   const add = (client: ClientId, paths: string[]): void => {
@@ -89,35 +90,60 @@ export function getClientConfigCandidates(options: ScannerOptions = {}): ClientC
       candidates.push({
         client,
         displayName: clientNames[client],
-        path: path.resolve(expandHome(item, homeDir)),
+        path: platformPath.resolve(expandHome(item, homeDir, platformPath)),
       });
     }
   };
 
-  add("cursor", [
-    path.join(homeDir, ".cursor", "mcp.json"),
-    platform === "darwin"
-      ? path.join(homeDir, "Library", "Application Support", "Cursor", "User", "mcp.json")
-      : path.join(appDataDir, "Cursor", "User", "mcp.json"),
-    platform === "darwin"
-      ? path.join(homeDir, "Library", "Application Support", "Cursor", "User", "settings.json")
-      : path.join(appDataDir, "Cursor", "User", "settings.json"),
-  ]);
-
-  add("claude-desktop", [
-    platform === "darwin"
-      ? path.join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json")
-      : path.join(appDataDir, "Claude", "claude_desktop_config.json"),
-  ]);
-
-  add("vscode", [
-    platform === "darwin"
-      ? path.join(homeDir, "Library", "Application Support", "Code", "User", "settings.json")
-      : path.join(appDataDir, "Code", "User", "settings.json"),
-    path.join(homeDir, ".vscode", "mcp.json"),
-  ]);
+  add("cursor", cursorCandidatePaths(homeDir, appDataDir, platform));
+  add("claude-desktop", claudeCandidatePaths(homeDir, appDataDir, platform));
+  add("vscode", vscodeCandidatePaths(homeDir, appDataDir, platform));
 
   return candidates;
+}
+
+function cursorCandidatePaths(homeDir: string, appDataDir: string, platform: NodeJS.Platform): string[] {
+  const platformPath = pathForPlatform(platform);
+  const userConfigDir =
+    platform === "darwin"
+      ? platformPath.join(homeDir, "Library", "Application Support", "Cursor", "User")
+      : platform === "win32"
+        ? platformPath.join(appDataDir, "Cursor", "User")
+        : platformPath.join(homeDir, ".config", "Cursor", "User");
+
+  return [
+    platformPath.join(homeDir, ".cursor", "mcp.json"),
+    platformPath.join(userConfigDir, "mcp.json"),
+    platformPath.join(userConfigDir, "settings.json"),
+  ];
+}
+
+function claudeCandidatePaths(homeDir: string, appDataDir: string, platform: NodeJS.Platform): string[] {
+  const platformPath = pathForPlatform(platform);
+  const configDir =
+    platform === "darwin"
+      ? platformPath.join(homeDir, "Library", "Application Support", "Claude")
+      : platform === "win32"
+        ? platformPath.join(appDataDir, "Claude")
+        : platformPath.join(homeDir, ".config", "Claude");
+
+  return [platformPath.join(configDir, "claude_desktop_config.json")];
+}
+
+function vscodeCandidatePaths(homeDir: string, appDataDir: string, platform: NodeJS.Platform): string[] {
+  const platformPath = pathForPlatform(platform);
+  const userConfigDir =
+    platform === "darwin"
+      ? platformPath.join(homeDir, "Library", "Application Support", "Code", "User")
+      : platform === "win32"
+        ? platformPath.join(appDataDir, "Code", "User")
+        : platformPath.join(homeDir, ".config", "Code", "User");
+
+  return [platformPath.join(userConfigDir, "settings.json"), platformPath.join(homeDir, ".vscode", "mcp.json")];
+}
+
+function pathForPlatform(platform: NodeJS.Platform): path.PlatformPath {
+  return platform === "win32" ? path.win32 : path.posix;
 }
 
 export function parseMcpServersFromConfig(
@@ -146,6 +172,7 @@ export function parseMcpServersFromConfig(
     const args = Array.isArray(value.args) ? value.args.filter((item): item is string => typeof item === "string") : [];
     const cwd = typeof value.cwd === "string" ? value.cwd : undefined;
     const env = normalizeEnv(value.env);
+    const envSummary = summarizeEnv(env);
     const risk = classifyServerRisk({ name, command, args });
 
     return [
@@ -157,8 +184,8 @@ export function parseMcpServersFromConfig(
         command,
         args,
         cwd,
-        env,
-        envSummary: summarizeEnv(env),
+        env: envSummary,
+        envSummary,
         riskLevel: risk.level,
         capabilities: risk.capabilities,
         warnings: [
@@ -304,12 +331,12 @@ function riskWarningsFromCommand(command: string | undefined, args: string[]): s
   return warnings;
 }
 
-function expandHome(value: string, homeDir: string): string {
+function expandHome(value: string, homeDir: string, platformPath = path): string {
   if (value === "~") {
     return homeDir;
   }
   if (value.startsWith("~/") || value.startsWith("~\\")) {
-    return path.join(homeDir, value.slice(2));
+    return platformPath.join(homeDir, value.slice(2));
   }
   return value;
 }
