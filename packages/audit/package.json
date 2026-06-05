@@ -1,0 +1,22 @@
+{
+  "name": "@mcp-toollatch/audit",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Audit event models for MCP ToolLatch.",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  }
+}

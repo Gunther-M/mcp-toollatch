@@ -1,0 +1,40 @@
+{
+  "name": "mcp-toollatch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local policy, approval, and audit for MCP tool calls.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "pnpm -r --sort build",
+    "dev": "pnpm --filter @mcp-toollatch/cli dev",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "typecheck": "pnpm -r --sort typecheck",
+    "clean": "pnpm -r clean && node -e \"require('fs').rmSync('coverage',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "mcp",
+    "ai-agent",
+    "security",
+    "policy",
+    "audit"
+  ],
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@types/node": "^22.15.29",
+    "eslint": "^9.28.0",
+    "globals": "^16.2.0",
+    "prettier": "^3.5.3",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.1",
+    "vitest": "^3.2.1"
+  }
+}

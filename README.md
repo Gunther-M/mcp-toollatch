@@ -1,38 +1,80 @@
 # MCP ToolLatch
 
-#### 介绍
-本地运行的 MCP 与 AI Agent 工具调用安全网关，支持配置扫描、策略初始化、代理拦截、高危操作确认和审计日志。
-A local safety gateway for MCP and AI agent tool calls, with config scanning, policy enforcement, approval, and audit logs.
+Local policy, approval, and audit for MCP tool calls.
 
-#### 软件架构
-软件架构说明
+MCP ToolLatch is a local safety gateway for MCP and AI Agent tool calls. It is designed to scan MCP client configuration, prepare local policy files, wrap stdio MCP servers, block or require approval for risky tool calls, and write audit logs.
 
+中文简介：MCP ToolLatch 是一个本地运行的 MCP 与 AI Agent 工具调用安全网关，用于配置扫描、本地策略、调用确认和审计记录。
 
-#### 安装教程
+## Status
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+Pre-alpha / active development / not production-ready.
 
-#### 使用说明
+The first phase is a runnable project scaffold and CLI placeholder. It does not yet enforce real policy or proxy MCP traffic.
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## Why This Exists
 
-#### 参与贡献
+MCP servers can give AI agents access to external tools such as files, shell commands, databases, networks, and local applications. That power needs local visibility, policy, approval, and audit trails so users can understand and control what tool calls are happening.
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+MCP server 让 AI Agent 能访问文件、命令、数据库、网络等外部工具，因此需要本地策略、确认和审计。
 
+## Phase 1 Goals
 
-#### 特技
+- scan MCP configs
+- init local policy
+- wrap stdio MCP servers
+- block risky tool calls
+- write audit logs
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## Planned CLI
+
+```bash
+toollatch scan
+toollatch init
+toollatch wrap
+toollatch logs
+```
+
+Current commands are placeholders only:
+
+```bash
+toollatch --help
+toollatch scan
+toollatch init
+toollatch wrap
+toollatch logs
+```
+
+## Packages
+
+- `@mcp-toollatch/cli` - command-line interface
+- `@mcp-toollatch/core` - shared types and metadata
+- `@mcp-toollatch/scanner` - MCP client and server config scanner
+- `@mcp-toollatch/policy` - policy schema and future evaluation logic
+- `@mcp-toollatch/proxy` - future stdio MCP proxy
+- `@mcp-toollatch/audit` - audit log models and future writers
+- `@mcp-toollatch/rules` - risk rule metadata and future rule packs
+
+## Development
+
+```bash
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm test
+pnpm lint
+```
+
+## Security Notice
+
+MCP ToolLatch is not a complete sandbox in the first phase. It does not promise to defend against every prompt injection, data leak, malicious MCP server, or unsafe local environment. Treat it as an early local visibility and control layer.
+
+安全声明：本项目第一阶段不是完整沙箱，不承诺防御所有 prompt injection 或数据泄露。
+
+## Roadmap
+
+See [ROADMAP.md](./ROADMAP.md) and [docs/mvp-scope.md](./docs/mvp-scope.md).
+
+## License
+
+Apache-2.0. See [LICENSE](./LICENSE).
