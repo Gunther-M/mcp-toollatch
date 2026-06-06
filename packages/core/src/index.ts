@@ -36,6 +36,7 @@ export interface PolicyDecision {
   reason: string;
   matchedRuleId?: string;
   matchedRuleTitle?: string;
+  matchedValue?: string;
   suggestedFix?: string;
 }
 
@@ -119,7 +120,7 @@ function sortJson(value: unknown): unknown {
 }
 
 export const sensitiveKeyPattern =
-  /(?:token|secret|password|passwd|api[_-]?key|authorization|cookie|private[_-]?key|credential)/i;
+  /(?:token|secret|password|passwd|api[_-]?key|authorization|cookie|private[_-]?key|credential|certificate|cert)/i;
 
 export function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
@@ -143,7 +144,9 @@ export function containsObviousSecret(value: string): boolean {
   return (
     /(?:token|secret|password|passwd|api[_-]?key|authorization|cookie)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{6,}/i.test(
       value,
-    ) || /bearer\s+[A-Za-z0-9._~+/=-]{6,}/i.test(value)
+    ) ||
+    /bearer\s+[A-Za-z0-9._~+/=-]{6,}/i.test(value) ||
+    /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----/i.test(value)
   );
 }
 

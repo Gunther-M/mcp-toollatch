@@ -204,6 +204,7 @@ describe("phase 1 acceptance: proxy process E2E", () => {
       { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "read_file", arguments: { path: "./src/ok.txt" } } },
       { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "read_file", arguments: { path: ".env" } } },
       { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "shell_run", arguments: { command: "rm -rf /tmp/x" } } },
+      { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "fetch_url", arguments: { url: "http://169.254.169.254/latest/meta-data" } } },
     ]);
 
     expect(result.exitCode).toBe(0);
@@ -213,7 +214,8 @@ describe("phase 1 acceptance: proxy process E2E", () => {
     expect(messages.find((message) => message.id === 2)?.result.tools.map((tool: { name: string }) => tool.name)).toContain("read_file");
     expect(JSON.stringify(messages.find((message) => message.id === 3))).toContain("safe content");
     expect(messages.find((message) => message.id === 4)?.error.message).toBe("Blocked by MCP ToolLatch policy");
-    expect(messages.find((message) => message.id === 5)?.error.data.matchedRuleId).toBe("RULE-004");
+    expect(messages.find((message) => message.id === 5)?.error.data.matchedRuleId).toBe("RULE-CMD-001");
+    expect(messages.find((message) => message.id === 6)?.error.data.matchedRuleId).toBe("RULE-NET-001");
     expect(result.stdout).not.toContain("fake-mcp-server ready");
     expect(result.stdout).not.toContain("must-not-leak");
 

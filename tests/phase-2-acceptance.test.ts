@@ -99,7 +99,7 @@ describe("phase 2 acceptance: CLI deep scan, apply, doctor, and logs export", ()
         toolName: "read_file",
         arguments: { token: "secret-token-value", path: ".env" },
       },
-      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-001" },
+      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-PATH-001" },
     });
 
     const doctor = await runCli(["doctor", "--policy", policyPath, "--audit-log", auditPath, "--json"]);
@@ -120,7 +120,7 @@ describe("phase 2 acceptance: CLI deep scan, apply, doctor, and logs export", ()
     ]);
     expect(JSON.parse(exported.stdout).count).toBe(1);
     const csv = await fs.readFile(exportPath, "utf8");
-    expect(csv).toContain("RULE-001");
+    expect(csv).toContain("RULE-PATH-001");
     expect(csv).not.toContain("secret-token-value");
   });
 });

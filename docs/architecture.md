@@ -14,7 +14,7 @@ Finds MCP client configuration, parses configured MCP servers, redacts sensitive
 
 ### policy
 
-Defines the local policy schema, loads YAML, validates structure, extracts paths/commands/URLs/SQL from tool arguments, and returns explainable `allow`, `confirm`, or `block` decisions.
+Defines the local policy schema, loads YAML, validates structure, extracts paths/commands/domains/URLs/SQL from tool arguments, and returns explainable `allow`, `confirm`, or `block` decisions. Domain allow/deny and safe shell allowlist decisions live here, not in the CLI.
 
 ### proxy
 
@@ -22,11 +22,11 @@ Wraps stdio MCP servers, forwards JSON-RPC messages, and intercepts `tools/call`
 
 ### audit
 
-Defines audit event shapes, writes JSONL events, reads recent logs, filters events, exports redacted JSON/CSV, and redacts sensitive arguments.
+Defines audit event shapes, writes JSONL events with optional rotation, reads recent logs across rotated files, filters events, exports redacted JSON/CSV/Markdown, and redacts sensitive arguments.
 
 ### rules
 
-Holds built-in sensitive path patterns, dangerous command patterns, confirmation command patterns, and static server classification rules.
+Holds built-in sensitive path patterns, dangerous command patterns, safe command matching helpers, denied domain patterns, domain extraction/matching helpers, confirmation command patterns, and static server classification rules.
 
 ### core
 
@@ -50,4 +50,4 @@ Aggregates scanner, policy, and audit status into local diagnostics with repair 
 6. `toollatch policy check` asks `policy` to load and validate YAML.
 7. `toollatch wrap` asks `proxy` to launch and mediate a stdio MCP server.
 8. `proxy` calls `policy` before forwarding `tools/call` requests.
-9. `audit` records each intercepted tool-call decision as JSONL.
+9. `audit` records each intercepted tool-call decision as JSONL and rotates logs according to policy settings.

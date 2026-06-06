@@ -37,6 +37,7 @@ Current version: `v0.3.0-beta.1`
 - Was `wrap` / proxy stable?
 - Did `apply` / `restore` feel safe and understandable?
 - Were audit logs useful?
+- Did domain allow/deny, safe shell allowlist, or audit rotation affect your trial?
 - Does ToolLatch support your MCP client or server?
 
 ## Feedback Format
@@ -59,3 +60,4 @@ Current version: `v0.3.0-beta.1`
 - Security policy: `SECURITY.md`
 - Beta feedback issue template: `.github/ISSUE_TEMPLATE/beta_trial_feedback.md`
 - Security report template: `.github/ISSUE_TEMPLATE/security_report.md`
+- Phase 3 triage guide: `docs/community/phase-3-feedback-triage.md`

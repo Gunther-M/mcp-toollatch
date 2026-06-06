@@ -17,6 +17,15 @@ describe("core utilities", () => {
     expect(summarizeArguments({ api_key: "abc123456" })).not.toContain("abc123456");
   });
 
+  it("redacts private key blocks even under generic field names", () => {
+    const summary = summarizeArguments({
+      content: "-----BEGIN PRIVATE KEY-----\nsecret-private-key\n-----END PRIVATE KEY-----",
+    });
+
+    expect(summary).not.toContain("secret-private-key");
+    expect(summary).toContain("[REDACTED]");
+  });
+
   it("normalizes relative paths against a base directory", () => {
     expect(normalizePathForMatch(".env", "C:/repo", "C:/Users/me")).toContain("C:/repo/.env");
   });

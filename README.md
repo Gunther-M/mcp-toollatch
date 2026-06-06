@@ -62,9 +62,12 @@ node packages/cli/dist/index.js --help
 ```bash
 toollatch scan --json
 toollatch scan --deep --json
+toollatch scan --server filesystem --deep --json
 toollatch init --profile strict --force
 toollatch policy check
 toollatch doctor --json
+toollatch config paths --json
+toollatch rules list --json
 toollatch wrap --server filesystem -- node ./server.js
 toollatch logs --json
 ```
@@ -87,6 +90,7 @@ Deep scan starts configured stdio MCP servers and calls only `initialize` and `t
 
 ```bash
 toollatch scan --deep --client cursor --config ./mcp.json --timeout 5000 --json
+toollatch scan --deep --server filesystem --json
 ```
 
 Deep scan has a timeout and fails per server without breaking the whole scan. It does not call `tools/call`.
@@ -108,6 +112,14 @@ Profiles:
 - `balanced`: block sensitive paths and dangerous commands, confirm high-impact/unknown calls.
 - `strict`: block sensitive paths, dangerous commands, and stricter unknown/high-impact calls.
 
+Phase 3 policy fields include:
+
+- `rules[].deny_domains` and `rules[].allow_domains` for network destinations extracted from URL arguments and curl/wget-style shell commands.
+- `rules[].allow_commands` for explicit safe shell allowlist entries such as `node --version`; dangerous command deny rules still win first.
+- `audit.rotation.max_file_size_mb` and `audit.rotation.max_files` for JSONL audit log rotation.
+
+Policy decisions include a rule ID, title, severity/risk, reason, matched value when available, and suggested fix.
+
 ### Doctor
 
 Diagnose the local setup and get repair suggestions:
@@ -126,6 +138,7 @@ Inspect known client config path candidates and built-in rule references:
 
 ```bash
 toollatch config paths
+toollatch config paths --json
 toollatch config paths --client cursor --json
 toollatch rules list
 toollatch rules list --json
@@ -182,9 +195,10 @@ Export redacted logs:
 ```bash
 toollatch logs export --format json --out audit-export.json
 toollatch logs export --format csv --decision block --out audit-export.csv
+toollatch logs export --format md --out audit-export.md
 ```
 
-Audit logs are JSONL. Tool arguments are summarized and sensitive keys such as token, secret, password, api_key, authorization, cookie, and obvious secret assignments are redacted.
+Audit logs are JSONL with optional rotation. Tool arguments are summarized and sensitive keys such as token, secret, password, api_key, authorization, cookie, private keys, certificates, and obvious secret assignments are redacted.
 
 ## Packages
 

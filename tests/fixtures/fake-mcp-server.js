@@ -73,6 +73,11 @@ function handleMessage(message) {
             description: "Pretend to execute a shell command.",
             inputSchema: { type: "object", properties: { command: { type: "string" } } },
           },
+          {
+            name: "fetch_url",
+            description: "Pretend to fetch a URL without making a network request.",
+            inputSchema: { type: "object", properties: { url: { type: "string" } } },
+          },
         ],
       },
     });
@@ -122,6 +127,15 @@ function handleToolCall(message) {
       jsonrpc: "2.0",
       id: message.id,
       result: { content: [{ type: "text", text: `would run: ${String(args.command ?? "")}` }] },
+    });
+    return;
+  }
+
+  if (params.name === "fetch_url") {
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { content: [{ type: "text", text: `would fetch: ${String(args.url ?? "")}` }] },
     });
     return;
   }

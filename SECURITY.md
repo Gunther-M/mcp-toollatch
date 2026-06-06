@@ -20,7 +20,8 @@ The current beta focuses on visibility and local control for MCP tool calls:
 - local policy file initialization
 - stdio MCP proxy design
 - risky tool call blocking or approval
-- audit log visibility
+- domain allow/deny and explicit safe shell allowlist policy controls
+- audit log visibility, redacted export, and local JSONL rotation
 - client config dry-run/apply/restore helpers
 - local diagnostic and validation commands
 
@@ -43,5 +44,7 @@ Do not commit or publicly paste:
 - certificates or private key material
 - private local MCP configuration that exposes sensitive paths or credentials
 - raw audit logs before redaction
+- screenshots or terminal output that include real policy paths to secrets
 
 When reporting a security issue, prefer fake MCP servers, temporary directories, and sanitized config snippets.
+If an audit export is needed, use `toollatch logs export` and confirm the shared file does not contain raw token, password, authorization, private key, certificate, cookie, or `.env` values.

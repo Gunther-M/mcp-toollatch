@@ -12,6 +12,11 @@ describe("doctor diagnostics", () => {
     const report = await runDoctor({ cwd: tmp, clients: ["cursor"] });
 
     expect(report.issues.map((issue) => issue.id)).toContain("POLICY_MISSING");
+    expect(report.issues.find((issue) => issue.id === "POLICY_MISSING")).toMatchObject({
+      category: "policy",
+      suggestedCommand: "toollatch init --profile strict",
+      docLink: "docs/policy-reference.md",
+    });
     expect(summarizeDoctorReport(report)).toContain("toollatch init --profile");
   });
 
@@ -35,5 +40,9 @@ describe("doctor diagnostics", () => {
 
     expect(report.serversFound).toBe(1);
     expect(report.issues.map((issue) => issue.id)).toContain("HIGH_RISK_SERVER");
+    expect(report.issues.find((issue) => issue.id === "HIGH_RISK_SERVER")).toMatchObject({
+      category: "scanner",
+      suggestedCommand: "toollatch apply --client cursor --server shell --dry-run",
+    });
   });
 });

@@ -157,6 +157,7 @@ export function createBlockedResponse(request: JsonRpcRequest, decision: PolicyD
         reason: decision.reason,
         matchedRuleId: decision.matchedRuleId,
         matchedRuleTitle: decision.matchedRuleTitle,
+        matchedValue: decision.matchedValue,
         suggestedFix: decision.suggestedFix,
       },
     },
@@ -243,6 +244,9 @@ async function handleClientLine(
       request,
       decision: result.decision,
       startedAt,
+    }, {
+      maxFileSizeMb: options.policy.audit.rotation.max_file_size_mb,
+      maxFiles: options.policy.audit.rotation.max_files,
     });
   }
 

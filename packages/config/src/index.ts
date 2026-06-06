@@ -23,6 +23,9 @@ export interface ApplyConfigPlan {
   changed: boolean;
   alreadyWrapped: boolean;
   backupPath?: string;
+  backupPathPreview?: string;
+  rollbackCommand?: string;
+  impactSummary: string[];
   changes: ApplyConfigChange[];
   originalConfig: string;
   updatedConfig: string;
@@ -70,6 +73,9 @@ export async function createApplyConfigPlan(input: ApplyConfigInput): Promise<Ap
       configPath,
       changed: false,
       alreadyWrapped: true,
+      backupPathPreview: previewBackupPath(configPath),
+      rollbackCommand: undefined,
+      impactSummary: [],
       originalConfig,
       updatedConfig: originalConfig,
       changes: [],
@@ -95,6 +101,13 @@ export async function createApplyConfigPlan(input: ApplyConfigInput): Promise<Ap
     configPath,
     changed: true,
     alreadyWrapped: false,
+    backupPathPreview: previewBackupPath(configPath),
+    rollbackCommand: undefined,
+    impactSummary: [
+      `Wrap server "${input.serverName}" with toollatch proxy.`,
+      "Move the original command and args after the -- separator.",
+      "Create a timestamped backup before write mode changes the config.",
+    ],
     originalConfig,
     updatedConfig: `${JSON.stringify(parsed, null, 2)}\n`,
     changes: [
@@ -125,6 +138,7 @@ export async function applyWrappedConfig(input: ApplyConfigInput): Promise<Apply
   return {
     ...plan,
     backupPath,
+    rollbackCommand: `toollatch restore --config ${quoteForCommand(plan.configPath)} --backup ${quoteForCommand(backupPath)}`,
     message: `Updated ${plan.configPath}. Backup written to ${backupPath}.`,
   };
 }
@@ -219,4 +233,12 @@ function isWrappedServer(server: Record<string, unknown>, serverName: string): b
 function createBackupPath(configPath: string, label = "backup"): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   return `${configPath}.${label}-${stamp}.bak`;
+}
+
+function previewBackupPath(configPath: string): string {
+  return `${configPath}.backup-<timestamp>.bak`;
+}
+
+function quoteForCommand(value: string): string {
+  return /\s/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }

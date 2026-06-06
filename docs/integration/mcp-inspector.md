@@ -34,11 +34,12 @@ The Inspector starts a local web UI and launches ToolLatch as the MCP command. K
 ## Validation Checklist
 
 1. Connect to the ToolLatch-wrapped server in Inspector.
-2. Confirm the tool list includes `read_file`, `write_file`, and `shell_run`.
+2. Confirm the tool list includes `read_file`, `write_file`, `shell_run`, and `fetch_url`.
 3. Call `read_file` with a safe path such as `./src/ok.txt` from a temporary fixture directory. The call should succeed when the policy allows it.
 4. Call `read_file` with `.env`, `~/.ssh/id_rsa`, or `secret.pem`. ToolLatch should return a JSON-RPC error or confirmation/block outcome according to the active profile.
 5. Call `shell_run` with a dangerous command such as `rm -rf /tmp/toollatch-danger`. ToolLatch should block it.
-6. Inspect audit logs with:
+6. Call `fetch_url` with `http://169.254.169.254/latest/meta-data`. ToolLatch should block it through `RULE-NET-001`.
+7. Inspect audit logs with:
 
 ```bash
 node packages/cli/dist/index.js logs --json
@@ -78,9 +79,10 @@ Then run:
 npx @modelcontextprotocol/inspector --cli --config tmp/inspector/mcp.json --server fake -- --method tools/list
 npx @modelcontextprotocol/inspector --cli --config tmp/inspector/mcp.json --server fake -- --method tools/call --tool-name read_file --tool-arg path=docs/vision.md
 npx @modelcontextprotocol/inspector --cli --config tmp/inspector/mcp.json --server fake -- --method tools/call --tool-name read_file --tool-arg path=.env
+npx @modelcontextprotocol/inspector --cli --config tmp/inspector/mcp.json --server fake -- --method tools/call --tool-name fetch_url --tool-arg url=http://169.254.169.254/latest/meta-data
 ```
 
-The first two commands should succeed. The `.env` call should be blocked or confirmation-gated according to the active policy profile.
+The first two commands should succeed. The `.env` and metadata IP calls should be blocked or confirmation-gated according to the active policy profile.
 
 ## Troubleshooting
 

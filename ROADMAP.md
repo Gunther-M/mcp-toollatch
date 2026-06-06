@@ -39,6 +39,12 @@
 - GitHub Actions CI.
 - Rule plugin mechanism.
 
+## v0.4.0 - Phase 3 Implementation Focus
+
+- P0 in progress: domain allow/deny, safe shell allowlist, rule explanations, audit rotation/export, CI quality gates, pack smoke, doctor severity output, apply write summaries, malicious metadata detection, and temporary-fixture compatibility tests.
+- P1 deferred: custom local rule pack, logs summary/report, policy migration, GitHub MCP mock, DB risk classification, and confirm TUI refinements.
+- P2 deferred: Dashboard prototype, team policy management, full sandbox research, and extra install channels.
+
 ## Explicitly Out Of Scope For Now
 
 - Web Dashboard.

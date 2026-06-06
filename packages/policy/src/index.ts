@@ -19,7 +19,12 @@ import {
   defaultAllowedPathPatterns,
   defaultConfirmCommandPatterns,
   defaultDangerousCommandPatterns,
+  defaultDeniedDomainPatterns,
   defaultSensitivePathPatterns,
+  extractDomainsFromText,
+  matchDomainPattern,
+  matchSafeShellPattern,
+  matchShellPattern,
 } from "@mcp-toollatch/rules";
 
 export const defaultPolicyFileName = "toollatch.policy.yaml";
@@ -42,6 +47,9 @@ export const policyRuleSchema = z
     action: policyActionSchema.optional(),
     allow_paths: z.array(z.string()).default([]),
     deny_paths: z.array(z.string()).default([]),
+    allow_domains: z.array(z.string()).default([]),
+    deny_domains: z.array(z.string()).default([]),
+    allow_commands: z.array(z.string()).default([]),
     deny_commands: z.array(z.string()).default([]),
     require_confirm: z.boolean().default(false),
     suggested_fix: z.string().optional(),
@@ -63,6 +71,12 @@ export const policySchema = z
       .object({
         enabled: z.boolean().default(true),
         path: z.string().default(defaultAuditLogPath),
+        rotation: z
+          .object({
+            max_file_size_mb: z.number().positive().default(5),
+            max_files: z.number().int().positive().default(5),
+          })
+          .default({}),
       })
       .default({}),
     rules: z.array(policyRuleSchema).default([]),
@@ -79,6 +93,7 @@ export interface ExtractedToolArguments {
   paths: string[];
   commands: string[];
   urls: string[];
+  domains: string[];
   sql: string[];
   sensitiveFieldNames: string[];
 }
@@ -123,10 +138,14 @@ export function createPolicyForProfile(profile: PolicyProfile): ToolLatchPolicy 
     audit: {
       enabled: true,
       path: defaultAuditLogPath,
+      rotation: {
+        max_file_size_mb: 5,
+        max_files: 5,
+      },
     },
     rules: [
       {
-        id: "RULE-001",
+        id: "RULE-PATH-001",
         description: "Block sensitive file access.",
         severity: "critical",
         match: { category: "filesystem" },
@@ -135,7 +154,7 @@ export function createPolicyForProfile(profile: PolicyProfile): ToolLatchPolicy 
         suggested_fix: "Move secrets outside MCP-accessible paths or add a narrow allow rule for non-secret files.",
       },
       {
-        id: "RULE-003",
+        id: "RULE-PATH-ALLOW-001",
         description: "Keep default filesystem reads inside common project folders.",
         severity: "high",
         match: { category: "filesystem" },
@@ -143,7 +162,25 @@ export function createPolicyForProfile(profile: PolicyProfile): ToolLatchPolicy 
         action: filesystemOutsideAction,
       },
       {
-        id: "RULE-004",
+        id: "RULE-NET-001",
+        description: "Block explicitly denied network destinations.",
+        severity: "critical",
+        match: { category: "network" },
+        deny_domains: [...defaultDeniedDomainPatterns],
+        action: "block",
+        suggested_fix: "Review the destination domain before allowing network access.",
+      },
+      {
+        id: "RULE-NET-002",
+        description: "Require explicit network allowlist when allow_domains is configured.",
+        severity: "high",
+        match: { category: "network" },
+        allow_domains: [],
+        action: profile === "strict" ? "block" : "confirm",
+        suggested_fix: "Add a narrow allow_domains entry only after reviewing the destination.",
+      },
+      {
+        id: "RULE-CMD-001",
         description: "Block dangerous shell commands.",
         severity: "critical",
         match: { category: "shell" },
@@ -152,7 +189,16 @@ export function createPolicyForProfile(profile: PolicyProfile): ToolLatchPolicy 
         suggested_fix: "Review and run dangerous commands manually outside the MCP session.",
       },
       {
-        id: "RULE-005",
+        id: "RULE-CMD-ALLOW-001",
+        description: "Allow only explicitly configured safe shell commands.",
+        severity: "low",
+        match: { category: "shell" },
+        allow_commands: [],
+        action: "allow",
+        suggested_fix: "Keep allow_commands exact or narrowly wildcarded.",
+      },
+      {
+        id: "RULE-CMD-CONFIRM-001",
         description: "Require confirmation for high impact shell commands.",
         severity: "high",
         match: { category: "shell" },
@@ -162,7 +208,7 @@ export function createPolicyForProfile(profile: PolicyProfile): ToolLatchPolicy 
         suggested_fix: "Confirm only after checking the target environment and command arguments.",
       },
       {
-        id: "RULE-010",
+        id: "RULE-UNKNOWN-001",
         description: "Unknown tools require confirmation by default.",
         severity: "medium",
         match: { category: "unknown" },
@@ -244,14 +290,29 @@ export function evaluateToolCall(
     return observeDecision(policy, pathDecision);
   }
 
+  const domainDecision = evaluateDomainRules(policy, extracted.domains, category);
+  if (domainDecision.action !== "allow") {
+    if (domainDecision.action === "confirm" && context.isInteractive === false) {
+      return observeDecision(policy, {
+        ...domainDecision,
+        action: policy.defaults.non_interactive_confirm === "allow" ? "allow" : "block",
+        reason: `${domainDecision.reason} Non-interactive sessions deny confirmation by default.`,
+      });
+    }
+    return observeDecision(policy, domainDecision);
+  }
+
   const commandDecision = evaluateCommandRules(policy, extracted.commands, category);
+  if (commandDecision.matchedRuleId === "RULE-CMD-ALLOW-001") {
+    return observeDecision(policy, commandDecision);
+  }
+
   if (commandDecision.action !== "allow") {
     if (commandDecision.action === "confirm" && context.isInteractive === false) {
       return observeDecision(policy, {
         ...commandDecision,
         action: policy.defaults.non_interactive_confirm === "allow" ? "allow" : "block",
         reason: `${commandDecision.reason} Non-interactive sessions deny confirmation by default.`,
-        matchedRuleId: commandDecision.matchedRuleId ?? "RULE-013",
       });
     }
     return observeDecision(policy, commandDecision);
@@ -263,7 +324,6 @@ export function evaluateToolCall(
       ...genericDecision,
       action: policy.defaults.non_interactive_confirm === "allow" ? "allow" : "block",
       reason: `${genericDecision.reason} Non-interactive sessions deny confirmation by default.`,
-      matchedRuleId: genericDecision.matchedRuleId ?? "RULE-013",
     });
   }
 
@@ -277,6 +337,7 @@ export function extractToolArguments(
   const paths = new Set<string>();
   const commands = new Set<string>();
   const urls = new Set<string>();
+  const domains = new Set<string>();
   const sql = new Set<string>();
   const sensitiveFieldNames = new Set<string>();
 
@@ -292,7 +353,13 @@ export function extractToolArguments(
     }
 
     if (/(?:url|uri|endpoint|domain)/.test(lowerKey)) {
-      collectStrings(value).forEach((item) => urls.add(item));
+      collectStrings(value).forEach((item) => {
+        urls.add(item);
+        extractDomainsFromText(item).forEach((domain) => domains.add(domain));
+        if (/(?:domain|host|hostname)/.test(lowerKey) && !item.includes("://")) {
+          domains.add(item);
+        }
+      });
     }
 
     if (/(?:sql|query|statement)/.test(lowerKey)) {
@@ -311,13 +378,17 @@ export function extractToolArguments(
 
   if (/shell|command|exec|run/i.test(toolName)) {
     const direct = collectStrings(args.command ?? args.cmd ?? args.script);
-    direct.forEach((item) => commands.add(item));
+    direct.forEach((item) => {
+      commands.add(item);
+      extractDomainsFromText(item).forEach((domain) => domains.add(domain));
+    });
   }
 
   return {
     paths: [...paths],
     commands: [...commands],
     urls: [...urls],
+    domains: [...domains],
     sql: [...sql],
     sensitiveFieldNames: [...sensitiveFieldNames],
   };
@@ -368,7 +439,7 @@ function evaluatePathRules(
       const normalizedPattern = normalizePolicyPathPattern(pattern, cwd, homeDir);
       const matched = normalizedPaths.find((candidate) => matchPath(candidate, normalizedPattern));
       if (matched !== undefined) {
-        return makeDecision("block", rule.severity, rule, `Path is denied by policy: ${matched}`);
+        return makeDecision("block", rule.severity, rule, `Path is denied by policy: ${matched}`, matched);
       }
     }
   }
@@ -387,20 +458,87 @@ function evaluatePathRules(
         allowRule?.action === "block" ? "block" : "confirm",
         "high",
         {
-          id: "RULE-003",
+          id: "RULE-PATH-ALLOW-001",
           description: "Path is outside configured allow_paths.",
           severity: "high",
           match: { category },
           action: "confirm",
           allow_paths: [],
           deny_paths: [],
+          allow_domains: [],
+          deny_domains: [],
+          allow_commands: [],
           deny_commands: [],
           require_confirm: true,
           suggested_fix: "Add a narrow allow_paths entry if this location is expected.",
         },
         `Path is outside allow_paths: ${outside}`,
+        outside,
       );
     }
+  }
+
+  return allowDecision();
+}
+
+function evaluateDomainRules(
+  policy: ToolLatchPolicy,
+  domains: string[],
+  category: string,
+): PolicyDecision {
+  if (domains.length === 0) {
+    return allowDecision();
+  }
+
+  const rules = applicableDomainRules(policy, category);
+
+  for (const rule of rules) {
+    for (const pattern of rule.deny_domains) {
+      const matched = domains.find((domain) => matchDomainPattern(domain, pattern));
+      if (matched !== undefined) {
+        return makeDecision(
+          "block",
+          rule.severity,
+          rule,
+          `Domain is denied by policy pattern "${pattern}": ${matched}`,
+          matched,
+        );
+      }
+    }
+  }
+
+  const allowRules = rules.filter((rule) => rule.allow_domains.length > 0);
+  if (allowRules.length === 0) {
+    return allowDecision();
+  }
+
+  const outside = domains.find((domain) => {
+    return !allowRules.some((rule) => rule.allow_domains.some((pattern) => matchDomainPattern(domain, pattern)));
+  });
+
+  if (outside !== undefined) {
+    const rule = allowRules[0];
+    return makeDecision(
+      rule?.action === "block" ? "block" : "confirm",
+      rule?.severity ?? "high",
+      rule ?? {
+        id: "RULE-NET-002",
+        description: "Domain is outside configured allow_domains.",
+        severity: "high",
+        match: { category: "network" },
+        action: "confirm",
+        allow_paths: [],
+        deny_paths: [],
+        allow_domains: [],
+        deny_domains: [],
+        allow_commands: [],
+        deny_commands: [],
+        require_confirm: true,
+        suggested_fix: "Add a narrow allow_domains entry if this destination is expected.",
+      },
+      `Domain is outside allow_domains: ${outside}`,
+      outside,
+    );
   }
 
   return allowDecision();
@@ -420,12 +558,26 @@ function evaluateCommandRules(
       const matched = commands.find((command) => matchCommand(command, pattern));
       if (matched !== undefined) {
         const action = rule.require_confirm || rule.action === "confirm" ? "confirm" : "block";
-        return makeDecision(action, rule.severity, rule, `Command matched policy pattern "${pattern}": ${matched}`);
+        return makeDecision(action, rule.severity, rule, `Command matched policy pattern "${pattern}": ${matched}`, matched);
       }
     }
+  }
 
-    if (rule.require_confirm) {
-      return makeDecision("confirm", rule.severity, rule, "Command requires confirmation by policy.");
+  const allowRules = applicableRules(policy, category).filter((rule) => rule.allow_commands.length > 0);
+  if (allowRules.length > 0) {
+    const unlisted = commands.find((command) => {
+      return !allowRules.some((rule) => rule.allow_commands.some((pattern) => matchSafeShellPattern(command, pattern)));
+    });
+
+    const allowRule = allowRules[0];
+    if (unlisted === undefined && allowRule !== undefined) {
+      return makeDecision(
+        "allow",
+        "low",
+        allowRule,
+        "Command matched explicit safe shell allowlist.",
+        commands.join(" && "),
+      );
     }
   }
 
@@ -444,7 +596,7 @@ function evaluateGenericRules(
       action,
       risk,
       reason: "Unknown tool category; policy requires an explicit decision.",
-      matchedRuleId: "RULE-010",
+      matchedRuleId: "RULE-UNKNOWN-001",
       matchedRuleTitle: "Unknown tool",
       suggestedFix: "Add an explicit policy rule after reviewing this MCP tool.",
     };
@@ -470,11 +622,23 @@ function applicableRules(policy: ToolLatchPolicy, category: string): PolicyRule[
   });
 }
 
+function applicableDomainRules(policy: ToolLatchPolicy, category: string): PolicyRule[] {
+  return policy.rules.filter((rule) => {
+    if (rule.allow_domains.length === 0 && rule.deny_domains.length === 0) {
+      return false;
+    }
+
+    const matchCategory = rule.match.category;
+    return matchCategory === undefined || matchCategory === "network" || matchCategory === category;
+  });
+}
+
 function makeDecision(
   action: PolicyDecisionAction,
   risk: RiskLevel,
   rule: PolicyRule,
   reason: string,
+  matchedValue?: string,
 ): PolicyDecision {
   const descriptor = builtInRiskRules.find((item) => item.id === rule.id);
   return {
@@ -483,6 +647,7 @@ function makeDecision(
     reason,
     matchedRuleId: rule.id,
     matchedRuleTitle: descriptor?.title ?? rule.description,
+    matchedValue,
     suggestedFix: rule.suggested_fix ?? descriptor?.suggestedFix,
   };
 }
@@ -528,21 +693,7 @@ function matchPath(candidate: string, pattern: string): boolean {
 }
 
 export function matchCommand(command: string, pattern: string): boolean {
-  const normalizedCommand = command.replace(/\s+/g, " ").trim().toLowerCase();
-  const normalizedPattern = pattern.replace(/\s+/g, " ").trim().toLowerCase();
-
-  if (normalizedPattern.includes("*")) {
-    const regex = new RegExp(
-      `^${normalizedPattern
-        .split("*")
-        .map((part) => escapeRegex(part))
-        .join(".*")}`,
-      "i",
-    );
-    return regex.test(normalizedCommand);
-  }
-
-  return normalizedCommand.includes(normalizedPattern);
+  return matchShellPattern(command, pattern);
 }
 
 function collectStrings(value: unknown): string[] {
@@ -573,10 +724,6 @@ function visitArguments(
       visitArguments(ensureRecord(item), visitor);
     }
   }
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

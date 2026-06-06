@@ -15,6 +15,8 @@ describe("client config apply planning", () => {
 
     expect(plan.changed).toBe(true);
     expect(plan.updatedConfig).toContain("toollatch");
+    expect(plan.backupPathPreview).toContain("backup-<timestamp>");
+    expect(plan.impactSummary.join(" ")).toContain("timestamped backup");
     expect(await fs.readFile(configPath, "utf8")).toBe(original);
   });
 
@@ -54,6 +56,7 @@ describe("client config apply planning", () => {
 
     const applied = await applyWrappedConfig({ client: "cursor", serverName: "fs", configPath, write: true });
     expect(applied.backupPath).toBeDefined();
+    expect(applied.rollbackCommand).toContain("toollatch restore");
     expect(await fs.readFile(configPath, "utf8")).toContain("toollatch");
 
     const restored = await restoreConfigBackup({ configPath, backupPath: String(applied.backupPath) });

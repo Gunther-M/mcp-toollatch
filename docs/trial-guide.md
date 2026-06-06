@@ -30,6 +30,8 @@ Scan local MCP config candidates:
 ```bash
 node packages/cli/dist/index.js scan --json
 node packages/cli/dist/index.js scan --deep --json
+node packages/cli/dist/index.js config paths --json
+node packages/cli/dist/index.js rules list --json
 ```
 
 Create and validate a strict policy:
@@ -60,18 +62,20 @@ Send JSON-RPC lines to stdin:
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"docs/vision.md"}}}
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","arguments":{"path":".env"}}}
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"shell_run","arguments":{"command":"rm -rf /tmp/toollatch-danger"}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"fetch_url","arguments":{"url":"http://169.254.169.254/latest/meta-data"}}}
 ```
 
 Expected behavior:
 
 - `initialize` and `tools/list` are forwarded.
 - `docs/vision.md` is a safe read example.
-- `.env` and `rm -rf` are blocked or confirmation-gated by policy.
+- `.env`, `rm -rf`, and the denied metadata IP domain are blocked or confirmation-gated by policy.
 
 Check audit logs:
 
 ```bash
 node packages/cli/dist/index.js logs --json
+node packages/cli/dist/index.js logs export --format md --out tmp/trial-audit.md
 ```
 
 ## Feedback
@@ -85,6 +89,7 @@ Bug reports and feature requests are most useful when they include:
 - Exact command run.
 - Error output or concise logs.
 - Whether `scan --json`, `doctor --json`, or `logs --json` reproduces the issue.
+- Whether domain rules, safe shell allowlist, or audit rotation were involved.
 
 ## How To Report Issues
 

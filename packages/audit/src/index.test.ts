@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createAuditEvent, exportAuditEvents, readAuditEvents, recordAuditEvent } from "./index";
+import { createAuditEvent, exportAuditEvents, listAuditLogFiles, readAuditEvents, recordAuditEvent } from "./index";
 
 describe("audit JSONL", () => {
   it("creates redacted audit events", () => {
     const event = createAuditEvent({
       request: { serverName: "fs", toolName: "read_file", arguments: { token: "secret-token" } },
-      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-001" },
+      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-PATH-001" },
     });
     expect(JSON.stringify(event)).not.toContain("secret-token");
   });
@@ -17,7 +17,7 @@ describe("audit JSONL", () => {
     const file = await tempLogPath();
     await recordAuditEvent(file, {
       request: { serverName: "fs", toolName: "read_file", arguments: { path: ".env" } },
-      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-001" },
+      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-PATH-001" },
     });
     const events = await readAuditEvents(file);
     expect(events).toHaveLength(1);
@@ -78,7 +78,7 @@ describe("audit JSONL", () => {
         toolName: "read_file",
         arguments: { token: "secret-token-value", path: ".env" },
       },
-      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-001" },
+      decision: { action: "block", risk: "critical", reason: "blocked", matchedRuleId: "RULE-PATH-001" },
     });
 
     const result = await exportAuditEvents({
@@ -90,8 +90,58 @@ describe("audit JSONL", () => {
 
     const exported = await fs.readFile(outFile, "utf8");
     expect(result.count).toBe(1);
-    expect(exported).toContain("RULE-001");
+    expect(exported).toContain("RULE-PATH-001");
     expect(exported).not.toContain("secret-token-value");
+  });
+
+  it("rotates logs and reads rotated files in newest-first query order", async () => {
+    const file = await tempLogPath();
+    for (const index of [1, 2, 3]) {
+      await recordAuditEvent(file, {
+        request: { serverName: "s", toolName: `tool_${index}`, arguments: { value: "x".repeat(80) } },
+        decision: { action: "allow", risk: "low", reason: `ok ${index}` },
+      }, {
+        maxFileSizeMb: 0.0002,
+        maxFiles: 3,
+      });
+    }
+
+    const files = await listAuditLogFiles(file);
+    const events = await readAuditEvents(file, { limit: 10 });
+
+    expect(files.length).toBeGreaterThan(1);
+    expect(events.map((event) => event.tool)).toEqual(["tool_3", "tool_2", "tool_1"]);
+  });
+
+  it("exports Markdown without leaking sensitive private key content", async () => {
+    const file = await tempLogPath();
+    const outFile = path.join(path.dirname(file), "audit.md");
+    await recordAuditEvent(file, {
+      request: {
+        serverName: "fs",
+        toolName: "write_file",
+        arguments: { content: "-----BEGIN PRIVATE KEY-----\nsecret-private-key\n-----END PRIVATE KEY-----" },
+      },
+      decision: {
+        action: "block",
+        risk: "critical",
+        reason: "private key blocked",
+        matchedRuleId: "RULE-AUDIT-001",
+        matchedRuleTitle: "Sensitive audit redaction",
+      },
+    });
+
+    const result = await exportAuditEvents({
+      logFilePath: file,
+      outFilePath: outFile,
+      format: "md",
+      query: { decision: "block" },
+    });
+
+    const exported = await fs.readFile(outFile, "utf8");
+    expect(result.count).toBe(1);
+    expect(exported).toContain("MCP ToolLatch Audit Export");
+    expect(exported).not.toContain("secret-private-key");
   });
 });
 

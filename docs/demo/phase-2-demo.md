@@ -1,6 +1,6 @@
-# Phase 2 Local Demo
+# Phase 2/3 Local Demo
 
-This demo uses only repository fixtures and files under `tmp/phase2-demo/`. It does not touch real Cursor, Claude Desktop, VS Code, `.env`, SSH, or certificate files.
+This demo uses only repository fixtures and files under `tmp/phase2-demo/`. It does not touch real Cursor, Claude Desktop, VS Code, `.env`, SSH, or certificate files. It also avoids real tokens and external network services.
 
 ## Prepare
 
@@ -19,9 +19,11 @@ node -e "const fs=require('fs');fs.rmSync('tmp/phase2-demo',{recursive:true,forc
 
 ```bash
 node packages/cli/dist/index.js scan --json
+node packages/cli/dist/index.js scan --server fake --deep --json
 node packages/cli/dist/index.js init --profile strict --force --output tmp/phase2-demo/toollatch.policy.yaml
 node packages/cli/dist/index.js policy check tmp/phase2-demo/toollatch.policy.yaml
 node packages/cli/dist/index.js doctor --json --policy tmp/phase2-demo/toollatch.policy.yaml
+node packages/cli/dist/index.js rules list --json
 ```
 
 ## Wrap Config Preview
@@ -47,13 +49,14 @@ Send line-delimited JSON-RPC messages to stdin:
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","arguments":{"path":".env"}}}
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"secret.pem"}}}
 {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"shell_run","arguments":{"command":"rm -rf /tmp/toollatch-danger"}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"fetch_url","arguments":{"url":"http://169.254.169.254/latest/meta-data"}}}
 ```
 
 Expected results:
 
 - `initialize` and `tools/list` are forwarded to the fake MCP server.
 - `read_file ./src/ok.txt` is the safe allow-path example.
-- `.env`, `secret.pem`, and `rm -rf` are blocked or confirmation-gated according to the selected profile.
+- `.env`, `secret.pem`, `rm -rf`, and the denied metadata IP URL are blocked or confirmation-gated according to the selected profile.
 - stdout contains JSON-RPC only; operational logs stay on stderr.
 
 ## Logs
@@ -61,6 +64,7 @@ Expected results:
 ```bash
 node packages/cli/dist/index.js logs --log-file tmp/phase2-demo/audit/audit.jsonl --json
 node packages/cli/dist/index.js logs export --log-file tmp/phase2-demo/audit/audit.jsonl --format json --out tmp/phase2-demo/audit/export.json --json
+node packages/cli/dist/index.js logs export --log-file tmp/phase2-demo/audit/audit.jsonl --format md --out tmp/phase2-demo/audit/export.md --json
 ```
 
-The exported audit data is redacted. It should not contain raw token, password, authorization, private key, certificate, or demo `.env` contents.
+The exported audit data is redacted and can rotate according to `audit.rotation` in the policy. It should not contain raw token, password, authorization, private key, certificate, or demo `.env` contents.

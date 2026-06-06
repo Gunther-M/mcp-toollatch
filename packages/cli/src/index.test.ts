@@ -49,6 +49,20 @@ describe("CLI", () => {
     });
   });
 
+  it("prints a placeholder wrapped config without a real command when only printing", async () => {
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createProgram().parseAsync(["wrap", "--print-config"], {
+      from: "user",
+    });
+
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toMatchObject({
+      command: "toollatch",
+      args: ["wrap", "--server", "mcp-server", "--policy", "toollatch.policy.yaml", "--", "node", "./server.js"],
+    });
+  });
+
+
   it("accepts claude as an alias for claude-desktop during apply dry-run", async () => {
     const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const configPath = await writeTempConfig();

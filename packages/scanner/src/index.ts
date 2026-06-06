@@ -15,6 +15,7 @@ export interface ScannerOptions {
   platform?: NodeJS.Platform;
   clients?: ClientId[];
   configPaths?: Partial<Record<ClientId, string[]>>;
+  serverNames?: string[];
   deep?: boolean;
   deepTimeoutMs?: number;
 }
@@ -280,7 +281,9 @@ async function scanCandidate(candidate: ClientConfigCandidate, options: ScannerO
     return baseClientResult(candidate, "invalid", formatted);
   }
 
-  const servers = parseMcpServersFromConfig(parsed, candidate.client, candidate.displayName, candidate.path);
+  const servers = parseMcpServersFromConfig(parsed, candidate.client, candidate.displayName, candidate.path).filter(
+    (server) => options.serverNames === undefined || options.serverNames.includes(server.name),
+  );
   if (options.deep === true) {
     for (const server of servers) {
       await enrichServerWithDeepScan(server, options.deepTimeoutMs ?? 3_000);

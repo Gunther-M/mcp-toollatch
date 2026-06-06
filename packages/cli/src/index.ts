@@ -28,6 +28,7 @@ import {
   defaultAllowedPathPatterns,
   defaultConfirmCommandPatterns,
   defaultDangerousCommandPatterns,
+  defaultDeniedDomainPatterns,
   defaultSensitivePathPatterns,
 } from "@mcp-toollatch/rules";
 
@@ -48,6 +49,7 @@ export function createProgram(): Command {
     .option("--output <file>", "write the scan report to a JSON file")
     .option("--client <client>", "limit scan to cursor, claude-desktop, or vscode", parseClient)
     .option("--config <file>", "explicit config path for the selected --client")
+    .option("--server <name>", "limit scan results to one configured server name")
     .option("--deep", "start configured stdio servers and call initialize/tools/list")
     .option("--timeout <ms>", "deep scan timeout in milliseconds", parsePositiveInteger, 3000)
     .action(async (options: {
@@ -55,6 +57,7 @@ export function createProgram(): Command {
       output?: string;
       client?: ClientId;
       config?: string;
+      server?: string;
       deep?: boolean;
       timeout: number;
     }) => {
@@ -67,6 +70,7 @@ export function createProgram(): Command {
           options.client === undefined || options.config === undefined
             ? undefined
             : { [options.client]: [path.resolve(options.config)] },
+        serverNames: options.server === undefined ? undefined : [options.server],
         deep: options.deep === true,
         deepTimeoutMs: options.timeout,
       });
@@ -182,6 +186,7 @@ export function createProgram(): Command {
         allowedPathPatterns: defaultAllowedPathPatterns,
         dangerousCommandPatterns: defaultDangerousCommandPatterns,
         confirmCommandPatterns: defaultConfirmCommandPatterns,
+        deniedDomainPatterns: defaultDeniedDomainPatterns,
       };
 
       if (options.json === true) {
@@ -201,6 +206,10 @@ export function createProgram(): Command {
       for (const pattern of defaultDangerousCommandPatterns) {
         console.log(`- ${pattern}`);
       }
+      console.log("\nDenied domain patterns:");
+      for (const pattern of defaultDeniedDomainPatterns) {
+        console.log(`- ${pattern}`);
+      }
     });
 
   program
@@ -212,7 +221,7 @@ export function createProgram(): Command {
     .option("--print-config", "print a wrapped MCP server config snippet and exit")
     .option("--confirm-timeout <ms>", "interactive confirmation timeout in milliseconds", parsePositiveInteger, 30_000)
     .allowUnknownOption(true)
-    .argument("<command...>", "real MCP server command after --")
+    .argument("[command...]", "real MCP server command after --")
     .action(
       async (
         commandParts: string[],
@@ -225,18 +234,16 @@ export function createProgram(): Command {
         },
       ) => {
         const [command, ...args] = commandParts;
-        if (command === undefined) {
-          throw new AppError("PROXY_FAILED", "Missing real server command. Usage: toollatch wrap --server name -- node server.js");
-        }
-
         const serverName = options.server?.trim();
         if (options.printConfig === true) {
+          const printCommand = command ?? "node";
+          const printArgs = command === undefined ? ["./server.js"] : args;
           console.log(
             JSON.stringify(
               createWrappedServerConfig({
                 serverName: serverName === undefined || serverName.length === 0 ? "mcp-server" : serverName,
-                command,
-                args,
+                command: printCommand,
+                args: printArgs,
                 policyPath: options.policy,
               }),
               null,
@@ -244,6 +251,10 @@ export function createProgram(): Command {
             ),
           );
           return;
+        }
+
+        if (command === undefined) {
+          throw new AppError("PROXY_FAILED", "Missing real server command. Usage: toollatch wrap --server name -- node server.js");
         }
 
         if (serverName === undefined || serverName.length === 0) {
@@ -306,14 +317,26 @@ export function createProgram(): Command {
 
         console.log(result.message);
         console.log(`Config: ${result.configPath}`);
+        if (result.backupPathPreview !== undefined && result.backupPath === undefined && result.changed) {
+          console.log(`Backup preview: ${result.backupPathPreview}`);
+        }
         if (result.backupPath !== undefined) {
           console.log(`Backup: ${result.backupPath}`);
+        }
+        if (result.impactSummary.length > 0) {
+          console.log("Impact:");
+          for (const item of result.impactSummary) {
+            console.log(`- ${item}`);
+          }
         }
         if (result.changes.length > 0) {
           console.log("Changes:");
           for (const change of result.changes) {
             console.log(`- ${change.path}: ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)}`);
           }
+        }
+        if (result.rollbackCommand !== undefined) {
+          console.log(`Rollback: ${result.rollbackCommand}`);
         }
         if (options.write !== true && options.yes !== true && result.changed) {
           console.log("No files were changed. Re-run with --write or --yes to apply after reviewing the JSON diff.");
@@ -385,10 +408,10 @@ export function createProgram(): Command {
 
   logsCommand
     .command("export")
-    .description("Export audit events as redacted JSON or CSV.")
+    .description("Export audit events as redacted JSON, CSV, or Markdown.")
     .option("--policy <file>", "policy file path", defaultPolicyFileName)
     .option("--log-file <file>", "audit JSONL path; defaults to policy audit.path")
-    .option("--format <format>", "json or csv", parseAuditExportFormat, "json")
+    .option("--format <format>", "json, csv, or md", parseAuditExportFormat, "json")
     .requiredOption("--out <file>", "output file path")
     .option("--limit <number>", "maximum events to export", parsePositiveInteger, 50)
     .option("--server <name>", "filter by server")
@@ -504,10 +527,10 @@ function parseDecision(value: string): PolicyDecisionAction {
 }
 
 function parseAuditExportFormat(value: string): AuditExportFormat {
-  if (value === "json" || value === "csv") {
+  if (value === "json" || value === "csv" || value === "md") {
     return value;
   }
-  throw new InvalidArgumentError("Expected one of: json, csv");
+  throw new InvalidArgumentError("Expected one of: json, csv, md");
 }
 
 function parsePositiveInteger(value: string): number {
@@ -597,6 +620,10 @@ async function loadPolicyOrDefault(filePath: string): Promise<ToolLatchPolicy> {
       audit: {
         enabled: true,
         path: ".toollatch/audit.jsonl",
+        rotation: {
+          max_file_size_mb: 5,
+          max_files: 5,
+        },
       },
       rules: [],
     };
@@ -623,6 +650,9 @@ function formatApplyConfigResult(result: Awaited<ReturnType<typeof applyWrappedC
   changed: boolean;
   alreadyWrapped: boolean;
   backupPath?: string;
+  backupPathPreview?: string;
+  rollbackCommand?: string;
+  impactSummary: string[];
   changes: Array<{ path: string; before: unknown; after: unknown }>;
   message: string;
 } {
@@ -633,6 +663,9 @@ function formatApplyConfigResult(result: Awaited<ReturnType<typeof applyWrappedC
     changed: result.changed,
     alreadyWrapped: result.alreadyWrapped,
     backupPath: result.backupPath,
+    backupPathPreview: result.backupPathPreview,
+    rollbackCommand: result.rollbackCommand,
+    impactSummary: result.impactSummary,
     changes: result.changes,
     message: result.message,
   };
