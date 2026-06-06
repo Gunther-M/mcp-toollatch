@@ -303,7 +303,7 @@ export function evaluateToolCall(
   }
 
   const commandDecision = evaluateCommandRules(policy, extracted.commands, category);
-  if (commandDecision.matchedRuleId === "RULE-CMD-ALLOW-001") {
+  if (commandDecision.action === "allow" && commandDecision.matchedRuleId === "RULE-CMD-ALLOW-001") {
     return observeDecision(policy, commandDecision);
   }
 
@@ -577,6 +577,21 @@ function evaluateCommandRules(
         allowRule,
         "Command matched explicit safe shell allowlist.",
         commands.join(" && "),
+      );
+    }
+
+    if (unlisted !== undefined && allowRule !== undefined) {
+      return makeDecision(
+        "confirm",
+        "high",
+        {
+          ...allowRule,
+          action: "confirm",
+          require_confirm: true,
+          suggested_fix: "Add an exact allow_commands entry only after reviewing this shell command.",
+        },
+        `Command is outside allow_commands: ${unlisted}`,
+        unlisted,
       );
     }
   }

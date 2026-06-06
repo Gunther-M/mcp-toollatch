@@ -233,4 +233,20 @@ describe("policy extraction and matching", () => {
       matchedRuleId: "RULE-CMD-001",
     });
   });
+
+  it("blocks non-allowlisted shell commands in non-interactive sessions when allow_commands is configured", () => {
+    const shellPolicy = createPolicyForProfile("strict");
+    shellPolicy.rules = shellPolicy.rules.map((rule) =>
+      rule.id === "RULE-CMD-ALLOW-001" ? { ...rule, allow_commands: ["node --version"] } : rule,
+    );
+
+    expect(evaluateToolCall(shellPolicy, {
+      serverName: "shell",
+      toolName: "shell.run",
+      arguments: { command: "echo hello" },
+    }, context)).toMatchObject({
+      action: "block",
+      matchedRuleId: "RULE-CMD-ALLOW-001",
+    });
+  });
 });
